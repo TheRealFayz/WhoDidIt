@@ -4144,10 +4144,12 @@ function UI:RunDetailRows()
 	tinsert(rows, row("|cffffd100" .. W.L((UI.rk.fv == "mine") and "<< Back to your runs" or "<< Back to the leaderboard") .. "|r", nil,
 		{ head = true, click = function() UI.rk.run = nil; UI:Refresh() end }))
 	local isMine = R.HasMember(rec)
+	local out = run.gk and R:Withdrawn(run.realm, key, run.gk, rec.t)
 	head(rows, (isMine and "|cffffd100" or "|cffffffff") .. rec.g .. "|r  |cffffffff" .. dg.title .. "|r  " .. C_DIM .. W.Board.Date(rec.d) .. "|r")
 	local place, of = R:Place(run.realm, key, rec.t)
 	tinsert(rows, row(W.L("Time") .. "  " .. C_DIM .. W.LF("(first pull to %s)", table.concat(dg.final, " / ")) .. "|r",
-		C_TIME .. R.Fmt(rec.t) .. "|r  " .. rankTxt(place) .. C_DIM .. " " .. W.LF("of %s on %s", of, run.realm) .. "|r"))
+		C_TIME .. R.Fmt(rec.t) .. "|r  " .. (out and ("|cffff7777" .. W.L("withdrawn") .. "|r")
+			or (rankTxt(place) .. C_DIM .. " " .. W.LF("of %s on %s", of, run.realm) .. "|r"))))
 	tinsert(rows, row("Deaths", ((rec.x or 0) > 0) and ("|cffff7777" .. rec.x .. "|r") or "|cff33ff33none|r"))
 	tinsert(rows, row("Realm  /  faction", "|cffcc99ff" .. W.Board.RealmLabel(run.realm) .. "|r" .. C_DIM .. "  /  |r|cffffffff" .. W.L(rec.f or "?") .. "|r"))
 	tinsert(rows, row("Recorded", C_DIM .. (rec.net and W.LF("shared by %s (self-reported)", rec.by or W.L("a WhoDidIt user"))
@@ -4160,6 +4162,15 @@ function UI:RunDetailRows()
 					if W.Runs:Rename(run.gk, text) then UI.rk.run = nil; UI:Refresh() end
 				end)
 			  end }))
+	end
+	-- a time the timer got wrong: a member takes it off the boards (asks first)
+	if out then
+		tinsert(rows, row("Withdrawn", "|cffff7777" .. W.LF("off the boards since %s, withdrawn by %s", W.Board.Date(out.at), W.L(out.by or "?")) .. "|r"))
+	elseif isMine and run.gk then
+		tinsert(rows, row("Wrong time?", "|cffff7777withdraw this run  >|r",
+			{ tipTitle = "Withdraw this run", tip = { "Takes it off the 5-man boards: yours and those of the WhoDidIt users on your realm.",
+				"Only a member of the group can. For a time the timer got wrong.", "Asks first. It can't be undone." },
+			  click = function() R:AskWithdraw(run.realm, key, run.gk, rec) end }))
 	end
 
 	local _, list = memText(rec.m)
@@ -4218,8 +4229,8 @@ function UI:MyRunRows(realm)
 		if dg then
 			local place, of = R:Place(e.realm or realm, e.k, e.t)
 			tinsert(rows, cells(MINE_SPEC, { C_DIM .. W.LDate("%d %b %H:%M", e.d) .. "|r", "|cffffffff" .. dg.title .. "|r", "|cffffd100" .. e.g .. "|r",
-				((e.x or 0) > 0) and ("|cffff7777" .. e.x .. "|r") or (C_DIM .. "0|r"), C_TIME .. R.Fmt(e.t) .. "|r",
-				rankTxt(place) .. C_DIM .. "/" .. of .. "|r" },
+				((e.x or 0) > 0) and ("|cffff7777" .. e.x .. "|r") or (C_DIM .. "0|r"), (e.wd and C_DIM or C_TIME) .. R.Fmt(e.t) .. "|r",
+				e.wd and ("|cffff7777" .. W.L("withdrawn") .. "|r") or (rankTxt(place) .. C_DIM .. "/" .. of .. "|r") },
 				{ sel = (e.k == UI.rk.dg), tipTitle = dg.title, tip = { (memText(e.m)), "|cff888888Click: the whole run|r" },
 				  click = function() openRun(e.k, e.gk, e, e.realm or realm) end }))
 		end

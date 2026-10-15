@@ -19,6 +19,8 @@
 	someone asks (Q), so the boards fill up across the realm:
 	  WDIB1~D~key~group name~secs~date~deaths~faction~Name:Cl,...~i=secs;...~named
 	A run is only taken from someone who was in it, and is sanity-checked.
+	A member can withdraw a run the timer got wrong (withdrawing a run, below):
+	  WDIB1~W~key~secs~Name,Name,...
 	Group names and player names come from other players: they're checked and
 	only ever shown in your own window, never posted to chat automatically.
 ----------------------------------------------------------------------]]
@@ -157,8 +159,9 @@ end
 --   d = date, x = deaths, f = faction, n = size, m = members, s = splits,
 --   nt = when it was named, by = who shared it, net = from the channel,
 --   priv = never shared (someone in the group opted out), ok = members seen sharing it }
--- WhoDidItDB.myRuns = your runs, newest first (every one, not only bests)
+-- WhoDidItDB.myRuns = your runs, newest first (every one, not only bests; wd = withdrawn)
 -- WhoDidItDB.groupNames[group key] = { n = name, at = when }
+-- WhoDidItDB.runsWithdrawn[realm]["key~group key~secs"] = withdrawn runs (see withdrawing a run)
 
 function R:DB(rlm)
 	if type(WhoDidItDB.dungeons) ~= "table" then WhoDidItDB.dungeons = {} end
@@ -201,6 +204,12 @@ function R:Merge(rlm, key, gk, rec)
 	if not list then
 		list = {}
 		r[key] = list
+	end
+	-- (a run a member withdrew never comes back: from the channel, the download or your own PC)
+	local out = R:Withdrawn(rlm, key, gk, rec.t)
+	if out then
+		out.hit = true
+		return false
 	end
 	local old = list[gk]
 	if old and (rec.t > old.t or (rec.t == old.t and (rec.nt or 0) <= (old.nt or 0))) then return false end
@@ -254,7 +263,7 @@ function R:MyBest(key)
 	local mine = R:MyRuns()
 	for i = 1, getn(mine) do
 		local e = mine[i]
-		if e.k == key and (not best or e.t < best.t) then best = e end
+		if e.k == key and not e.wd and (not best or e.t < best.t) then best = e end
 	end
 	return best
 end
@@ -725,11 +734,11 @@ function R:Share(key, rec)
 	saw(key .. SEP .. gk)
 end
 
--- someone asked (Q): our groups' bests, unless someone just sent them
+-- someone asked (Q): our groups' withdrawals and bests, unless someone just sent them
 function R:Answer()
 	if not R.On() then return end
 	local r = WhoDidItDB.dungeons and WhoDidItDB.dungeons[realm()]
-	local now, sent = GetTime(), 0
+	local now, sent = GetTime(), R:AnswerOut()
 	for key, list in pairs(r or {}) do
 		for gk, rec in pairs(list) do
 			local id = key .. SEP .. gk
@@ -755,6 +764,12 @@ function R:Receive(p, sender)
 	local inIt
 	for i = 1, getn(list) do if list[i].n == sender then inIt = true end end
 	if not inIt then return end
+	-- a withdrawn run (an older WhoDidIt of a member still shares it): not taken
+	local out = R:Withdrawn(realm(), key, gk, secs)
+	if out then
+		out.hit = true
+		return
+	end
 	if not from[sender] then
 		nFrom = nFrom + 1
 		if nFrom > 500 then from, nFrom = {}, 1 end
@@ -774,6 +789,210 @@ function R:Receive(p, sender)
 	if stored and addOk(stored, sender) then R.dirty = true end
 end
 
+------------------------------------------------------------------ withdrawing a run
+-- A member of a group can take one of its runs off the boards: a time the timer got
+-- wrong (Shemp's LBRS run, 14 Oct 2026: v1.26.0 saved 46:38 of a 1:54:00 run). A run
+-- is known by its dungeon, its group and its time to the second. The withdrawal is
+-- kept, so the run doesn't come back (R:Merge refuses it) from the group's other PCs,
+-- older WhoDidIt versions that still share it, or the download:
+--   WhoDidItDB.runsWithdrawn[realm]["key~group key~secs"] = { k = key, gk = group key,
+--     t = secs, at = when, by = who withdrew it, ok = members seen sharing it, priv = never shared,
+--     hit = it mattered here (see keepOut), sentAt = when this PC last sent it }
+-- It goes out on the realm channel (older versions ignore W):
+--   WDIB1~W~key~secs~Name,Name,...
+-- and is only taken from a member of that group (the server says who sent it), at
+-- most OUT_MAX per sender in OUT_WINDOW seconds. Taking one never makes anyone send:
+-- the members' WhoDidIts send theirs again when someone asks (Q), with their bests,
+-- so PCs that were offline hear it too. Masters write them to WhoDidIt_Runs.txt as
+-- W5 lines; the download takes the run off PCs that got it from an earlier download.
+
+local MAX_OUT = 200                  -- withdrawals kept per realm (your groups' always stay)
+local OUT_MAX, OUT_WINDOW = 5, 600   -- taken from one sender per 10 minutes
+local OUT_RESEND = 3                 -- sent again per answer (Q)
+local outFrom, nOutFrom = {}, 0      -- sender -> { since, n } (forgotten past 500 senders)
+
+local function outId(key, gk, secs) return key .. SEP .. gk .. SEP .. secs end
+local function inGroup(gk, name) return string.find("," .. gk .. ",", "," .. name .. ",", 1, true) and true or false end
+
+-- "Name,Name" from a message or the download -> this PC's group key (the names sorted,
+-- as R.Members sorts them) and how many; nil if anything is off
+local function okGroup(s)
+	if type(s) ~= "string" or s == "" or string.len(s) > 250 then return nil end
+	local list, dup = {}, {}
+	for n in string.gfind(s .. ",", "([^,]*),") do
+		if not okPlayer(n) or dup[n] then return nil end
+		dup[n] = true
+		tinsert(list, n)
+	end
+	if getn(list) > 10 then return nil end
+	table.sort(list)
+	return table.concat(list, ","), getn(list)
+end
+
+function R:OutDB(rlm)
+	if type(WhoDidItDB.runsWithdrawn) ~= "table" then WhoDidItDB.runsWithdrawn = {} end
+	rlm = rlm or realm()
+	local t = WhoDidItDB.runsWithdrawn[rlm]
+	if not t then
+		t = {}
+		WhoDidItDB.runsWithdrawn[rlm] = t
+	end
+	return t
+end
+
+-- the withdrawal of this run, or nil
+function R:Withdrawn(rlm, key, gk, secs)
+	local all = WhoDidItDB and WhoDidItDB.runsWithdrawn
+	local t = type(all) == "table" and all[rlm or realm()]
+	if not t or not key or not gk or not secs then return nil end
+	return t[outId(key, gk, secs)]
+end
+
+-- take a withdrawn run off a realm's board and mark it in your history;
+-- returns the board's copy, if it was there
+local function takeOff(rlm, key, gk, secs)
+	local r = WhoDidItDB.dungeons and WhoDidItDB.dungeons[rlm]
+	local list = r and r[key]
+	local rec = list and list[gk]
+	if rec and rec.t == secs then list[gk] = nil else rec = nil end
+	local mine = R:MyRuns()
+	for i = 1, getn(mine) do
+		local e = mine[i]
+		if e.k == key and e.gk == gk and e.t == secs and (e.realm or rlm) == rlm then e.wd = true end
+	end
+	R.dirty = true
+	return rec
+end
+
+-- keep a withdrawal (true if it's new). hit: it took a run off this PC (rec, the board's copy),
+-- came with the download (sure) or later stopped a run coming back. Past MAX_OUT one goes:
+-- never one of your groups', and ones that never hit first (a flood of made-up withdrawals,
+-- each from a member of its own made-up group, can't push out the ones that matter), oldest first
+local function keepOut(rlm, key, gk, secs, by, rec, sure)
+	local t = R:OutDB(rlm)
+	local id = outId(key, gk, secs)
+	if t[id] then
+		if rec and rec.ok and not t[id].ok then t[id].ok = rec.ok end
+		if rec or sure then t[id].hit = true end
+		return false
+	end
+	t[id] = { k = key, gk = gk, t = secs, at = time(), by = by, ok = rec and rec.ok, priv = rec and rec.priv, hit = (rec or sure) and true or nil }
+	local n, drop, dropHit, dropAt = 0, nil, nil, nil
+	for i, w in pairs(t) do
+		n = n + 1
+		if not inGroup(w.gk or "", me()) then
+			local h = w.hit and 1 or 0
+			if not drop or h < dropHit or (h == dropHit and (w.at or 0) < dropAt) then drop, dropHit, dropAt = i, h, w.at or 0 end
+		end
+	end
+	if n > MAX_OUT and drop then t[drop] = nil end
+	return true
+end
+
+-- out on the realm channel (5-man sharing and the channel on); true if it went
+local function sendOut(key, gk, secs)
+	if not R.On() or not W.Board or not W.Board.QueueOut or not WhoDidItDB.opts.shareBoard then return false end
+	W.Board.QueueOut(table.concat({ PROTO, "W", key, tostring(secs), gk }, SEP))
+	saw("W" .. SEP .. outId(key, gk, secs))
+	return true
+end
+
+-- withdraw a run of a group you're in (Rankings > 5-mans, the run's page, after asking):
+-- off your boards and best times, and the WhoDidIt users on the realm are told
+function R:Withdraw(rlm, key, gk, secs, name)
+	rlm = rlm or realm()
+	local dg = D().DUNGEON[key or ""]
+	if not dg or not gk or not secs or not inGroup(gk, me()) then
+		W.Print("Only a member of the group can withdraw its run.")
+		return false
+	end
+	local board = R:DB(rlm)[key]
+	name = name or (board and board[gk] and board[gk].g) or R:GroupName(gk) or gk
+	local rec = takeOff(rlm, key, gk, secs)
+	keepOut(rlm, key, gk, secs, me(), rec)
+	local w = R:Withdrawn(rlm, key, gk, secs)
+	local told = rlm == realm() and w and not w.priv and sendOut(key, gk, secs)
+	if told then w.sentAt = time() end
+	say(W.LF(told and "withdrawn: %s, %s in %s. It's off your boards, and the WhoDidIt users on the realm are told to drop it."
+		or "withdrawn: %s, %s in %s. It's off your boards only: 5-man sharing or the hidden channel is off, or the run was never shared there.",
+		"|cffffd100" .. name .. "|r", dg.title, R.Fmt(secs)))
+	if W.UI and W.UI.mode == "rankings" then W.UI:Refresh() end
+	return true
+end
+
+StaticPopupDialogs["WHODIDIT_WITHDRAW5"] = {
+	text = "Withdraw this run from the 5-man boards?\n\n%s\n\nIt goes off your boards and best times, and the WhoDidIt users on your realm are told to drop it. It can't be undone.",
+	button1 = YES, button2 = NO,
+	OnAccept = function()
+		local a = R.asked
+		R.asked = nil
+		if a then R:Withdraw(a.rlm, a.key, a.gk, a.t, a.g) end
+	end,
+	timeout = 0, whileDead = 1, hideOnEscape = 1,
+}
+
+-- the run's page: ask before withdrawing it
+function R:AskWithdraw(rlm, key, gk, rec)
+	local dg = D().DUNGEON[key or ""]
+	if not dg or not gk or not rec or not rec.t then return end
+	R.asked = { rlm = rlm, key = key, gk = gk, t = rec.t, g = R.OkName(rec.g) and rec.g or nil }
+	W.ShowPopup("WHODIDIT_WITHDRAW5", "|cffffd100" .. (rec.g or "?") .. "|r  " .. dg.title .. "  |cffffffff" .. R.Fmt(rec.t) .. "|r  "
+		.. W.LDate("%d %b %Y", rec.d or time()))
+end
+
+-- a withdrawal from the channel (p = the message split on ~)
+function R:ReceiveOut(p, sender)
+	if not sender or not WhoDidItDB then return end
+	local key, secs = p[3], tonumber(p[4])
+	local dg = key and D().DUNGEON[key]
+	if not dg or not secs or secs ~= floor(secs) or secs < D().RUN_MIN or secs > D().RUN_MAX then return end
+	local gk, n = okGroup(p[5])
+	-- only someone who was in the group can withdraw its run
+	if not gk or n > (dg.max or D().GROUP_MAX) or not inGroup(gk, sender) then return end
+	local rl = realm()
+	saw("W" .. SEP .. outId(key, gk, secs))
+	if R:Withdrawn(rl, key, gk, secs) then return end
+	-- rationed: OUT_MAX per sender every OUT_WINDOW seconds
+	local now = GetTime()
+	local q = outFrom[sender]
+	if not q or now - q.since > OUT_WINDOW then
+		if not q then
+			nOutFrom = nOutFrom + 1
+			if nOutFrom > 500 then outFrom, nOutFrom = {}, 1 end
+		end
+		q = { since = now, n = 0 }
+		outFrom[sender] = q
+	end
+	if q.n >= OUT_MAX then return end
+	q.n = q.n + 1
+	keepOut(rl, key, gk, secs, sender, takeOff(rl, key, gk, secs))
+	if inGroup(gk, me()) and sender ~= me() then
+		say(W.LF("%s withdrew your group's run: %s in %s. It's off your boards.", sender, dg.title, R.Fmt(secs)))
+	end
+	if W.UI and W.UI.mode == "rankings" then W.UI:Refresh() end
+end
+
+-- someone asked (Q): withdrawals of groups you're in go out again (a few, the longest
+-- unsent first, unless someone just sent them), so PCs that were offline hear them too
+function R:AnswerOut()
+	local t = WhoDidItDB.runsWithdrawn and WhoDidItDB.runsWithdrawn[realm()]
+	if not t then return 0 end
+	local list, now = {}, GetTime()
+	for id, w in pairs(t) do
+		local s = seen["W" .. SEP .. id]
+		if not w.priv and w.k and w.gk and w.t and inGroup(w.gk, me()) and not (s and now - s < 300) then tinsert(list, w) end
+	end
+	table.sort(list, function(a, b) return (a.sentAt or 0) < (b.sentAt or 0) end)
+	local sent = 0
+	for i = 1, math.min(getn(list), OUT_RESEND) do
+		if sendOut(list[i].k, list[i].gk, list[i].t) then
+			list[i].sentAt = time()
+			sent = sent + 1
+		end
+	end
+	return sent
+end
+
 ------------------------------------------------------------------ the download's runs, the master's file
 -- RaidTimes.lua (the maintainer's publish) carries the realms' 5-man runs as
 --   R5|realm|key|group|secs|date|deaths|faction|members|splits|named
@@ -781,7 +1000,9 @@ end
 -- boards to CustomData\WhoDidIt_Runs.txt, the same lines plus |ok (rec.ok: the
 -- members it saw share the run themselves). Names are only published for those:
 -- tools\Publish-RaidTimes.ps1 takes a run only when every member is in ok, and
--- tools\Website-Export.ps1 shows the others by class only.
+-- tools\Website-Export.ps1 shows the others by class only. A withdrawn run isn't
+-- written; its withdrawal is, so the download takes it off the PCs that have it:
+--   W5|realm|key|secs|Name,Name,...|ok   (published without ok, when every member is in it)
 
 local function splitBar(line)
 	local out = {}
@@ -811,6 +1032,14 @@ function R:Seed()
 					for i = 1, getn(list) do addOk(stored, list[i].n) end
 				end
 			end
+		elseif string.sub(line, 1, 3) == "W5|" then
+			local p = splitBar(line)
+			local dg = D().DUNGEON[p[3] or ""]
+			local gk, n = okGroup(p[5])
+			local secs = tonumber(p[4])
+			if dg and gk and n <= (dg.max or D().GROUP_MAX) and secs and p[2] ~= "" then
+				keepOut(p[2], p[3], gk, secs, "the WhoDidIt download", takeOff(p[2], p[3], gk, secs), true)
+			end
 		end
 	end
 end
@@ -822,11 +1051,18 @@ function R:WriteFile()
 	local out = { "WDIRUNS|1|" .. time() }
 	for rl, r in pairs(WhoDidItDB.dungeons or {}) do
 		for key, list in pairs(r) do
-			for _, rec in pairs(list) do
-				if not rec.priv and R.OkName(rec.g) and D().DUNGEON[key] then
+			for gk, rec in pairs(list) do
+				if not rec.priv and R.OkName(rec.g) and D().DUNGEON[key] and not R:Withdrawn(rl, key, gk, rec.t) then
 					tinsert(out, table.concat({ "R5", rl, key, rec.g, tostring(rec.t), tostring(rec.d), tostring(rec.x or 0),
 						rec.f or "?", rec.m or "", rec.s or "", tostring(rec.nt or rec.d), rec.ok or "" }, "|"))
 				end
+			end
+		end
+	end
+	for rl, t in pairs(WhoDidItDB.runsWithdrawn or {}) do
+		for _, w in pairs(t) do
+			if not w.priv and w.gk and w.t and D().DUNGEON[w.k or ""] then
+				tinsert(out, table.concat({ "W5", rl, w.k, tostring(w.t), w.gk, w.ok or "" }, "|"))
 			end
 		end
 	end

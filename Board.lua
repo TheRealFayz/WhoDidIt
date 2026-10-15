@@ -1411,6 +1411,11 @@ function B:Receive(msg, sender)
 		if W.Runs then W.Runs:Receive(p, sender) end
 		return
 	end
+	-- a 5-man run withdrawn: only from a member of that group, rationed (Dungeons.lua)
+	if kind == "W" then
+		if W.Runs then W.Runs:ReceiveOut(p, sender) end
+		return
+	end
 	-- K / C (a guild's kill / clear time) from older versions: ignored. Raid
 	-- times only come from the master feed.
 end

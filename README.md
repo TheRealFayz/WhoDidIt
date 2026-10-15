@@ -293,6 +293,13 @@ its loading screen, laid out like the raids.
   only carries a group's run when every member shares their runs with WhoDidIt (the maintainer's WhoDidIt saw each of
   them share it themselves). A group with anyone else in it, such as a player without WhoDidIt, stays on the realm
   channel. When a group finishes, every member with sharing on sends the run, not only the one who names it.
+- **A wrong time? Withdraw it.** If the timer got a run wrong (1.26.0 could lose a run's start after a death and a
+  run-back), anyone who was in the group can take it off the boards: click the run (on the board or in **Your runs**),
+  click **withdraw this run** next to **Wrong time?** and say **Yes**. It goes off your boards and best times (**Your
+  runs** keeps it, marked *withdrawn*), and the WhoDidIt users on your realm are told to drop it. Members' WhoDidIts
+  tell the realm again when someone asks, so players who were offline hear it too, and the next download update takes it
+  off for everyone. It can't be undone, and only works for a group you were in. Until a member on an older WhoDidIt
+  updates, they still share the run, but nobody with 1.26.2 or later takes it back.
 - Chat says which boss ended each run. If a Turtle dungeon's last boss turns out to be wrong, tell the maintainer.
 
 ### Times before and after the 6 Oct raid scaling change
@@ -1034,7 +1041,7 @@ WhoDidIt is built so it can't get you into trouble in chat, and so nothing about
 | The master | Chronicle's times: guild names, raid and boss names, times, dates, raid sizes and Chronicle log links |
 | Anyone asking the master | Only "send me what's new since …" |
 | Guild members, on the hidden **guild** addon channel (Hall of Fame sharing on) | Each fight they recorded: who was in it and their classes, deaths, hero and blame points by kind, the MVP and most to blame, the two best plays and worst blunders. Only to the guild. |
-| One member of a 5-man group (5-man sharing on) | The group's finished run: group name, the members' names and classes, dungeon, time, date, deaths, faction and boss splits |
+| One member of a 5-man group (5-man sharing on) | The group's finished run: group name, the members' names and classes, dungeon, time, date, deaths, faction and boss splits. If a member withdraws a run: the dungeon, its time and the members' names |
 
 Never sent: character names (except a 5-man group's members in its run, and to your guild the players in its Hall of Fame fights), gear, chat, where you are, or anything from your PC. The download (`RaidTimes.lua`) and the website export only name
 5-man members who share their runs with WhoDidIt themselves (seen by the maintainer's WhoDidIt, never taken from a
@@ -1053,6 +1060,8 @@ the channel altogether; `/wdi feed off` just ignores the feed.
   minutes to 4 hours, real class names, a group name of 2-24 characters without colour codes or links, at most 40 runs
   per sender, 60 groups per dungeon (always including yours). Group names come from other players: they're only shown
   in your window, and **Post top 3** shows you the exact text before anything is posted.
+- **A withdrawn 5-man run only from someone who was in that group**: at most 5 per sender every 10 minutes, 200 kept
+  per realm (your groups' always). Taking one never makes your WhoDidIt send anything.
 **Your PC**
 
 - The addon can't go online. Through Nampower it only reads and writes its own files in `CustomData`.

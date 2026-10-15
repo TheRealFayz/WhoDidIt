@@ -92,6 +92,12 @@ World of Warcraft client 1.12.1 (TurtleWoW / OctoWoW), Lua 5.0, with SuperWoW an
   Channel record "D" (Board.lua hands it to W.Runs:Receive) is only accepted from a member; group names are untrusted
   (R.OkName). Masters write CustomData\WhoDidIt_Runs.txt (R5 lines + |ok) for Publish-RaidTimes and
   tools\Website-Export.ps1 (JSON for the website; upload off until tools\website.json, which is gitignored).
+- A member withdraws a wrong 5-man run (R:Withdraw, asks first): a run = dungeon + group key + seconds. The withdrawal
+  (WhoDidItDB.runsWithdrawn) makes R:Merge refuse that run for good, so it can't come back from members' PCs, older
+  versions or the download. Record "W" (key~secs~names) only from a member, 5 per sender per 10 min, 200 kept per realm
+  (yours always, ones that took a run off before ones that never did); taking one makes nobody send, members re-send
+  theirs in R:Answer. Masters write W5 lines; Publish-RaidTimes publishes them under the R5 ok rule and R:Seed applies
+  them. Older clients ignore W (B:Receive drops unknown kinds) and keep sharing the run until they update.
 - Character names in the repository (RaidTimes.lua) or an export: the maintainer chose option (b) of review 3's T1
   (9 Oct 2026). rec.ok (Dungeons.lua addOk) holds the members this PC saw share a run themselves: their own WDI5 vote,
   or the run sent by them on the realm channel (the server says who sent it; never what a message claims). Only those
