@@ -90,6 +90,11 @@ World of Warcraft client 1.12.1 (TurtleWoW / OctoWoW), Lua 5.0, with SuperWoW an
   ship in the repo at the pins in tools/EmbedUpdate.ps1 (maintainer tool: move a pin, run it,
   review, commit), each with WDI_NOTICE.txt. The sync helper and AutoSync are maintainer-only
   (they refuse to run on a PC without a B.MASTERS character).
+- Chronicle log files (Logs.lua, opts.chronSplit, built-in logger only): every raid / 5-man run gets its own
+  numbered file through a wrapped ChronicleLog.GetLogFilename (L.target), picked once the zone settles; FlushToFile
+  is wrapped to count lines per file, WriteZoneInfo to clear lastInstanceIds (Chronicle's stale-instance pop-up fired
+  after a relog, when GetSavedInstanceInfo isn't loaded yet, and its Archive hid the raid in a _backup_<time> file).
+  A lockout ID of 0 never starts a new file. Chronicle's own files are never edited (EmbedUpdate replaces them).
 - A dead boss must not start a fight (Tracker.lua slain / deadBoss): Golemagg's Magma Splash kept ticking after his
   death and each tick became a 0:03 "kill" that also saved the Chronicle log (MC, 15 Oct 2026).
 - The built-in Chronicle logger logs nothing until the player says yes (opts.chronUse). It stands

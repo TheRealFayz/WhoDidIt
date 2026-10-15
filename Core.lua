@@ -353,6 +353,7 @@ local DEFAULTS = {
 	shareBoard  = true,     -- the hidden realm channel: raid times from the master feed, 5-man runs
 	chronStartOnPull = true,  -- start Chronicle logging when a boss is pulled
 	chronSaveOnFight = true,  -- save the Chronicle log after every boss fight
+	chronSplit  = true,     -- an own numbered Chronicle file for every raid and 5-man run (Logs.lua)
 	banterKills  = false,   -- fun line in the shout channel after every boss kill (the raid leader switches it on)
 	banterClears = false,   -- ...and after every full clear
 	rivalAlerts  = false,   -- show the rival watch in your own chat when the raid enters an instance

@@ -4388,7 +4388,8 @@ function UI:LogRows()
 	else
 		tinsert(rows, row("Logger", W.L("|cffffd100ChronicleCompanion addon|r") .. "  |cffffffffv" .. (L:Version() or "?") .. "|r"))
 	end
-	tinsert(rows, row("Log file", "|cffffffff" .. W.L("WoW folder") .. "\\CustomData\\" .. file .. "|r"))
+	tinsert(rows, row("Log file", (L.target and L.cur and ("|cffffd100" .. W.LF("log %d", L.cur.n) .. "|r  ") or "")
+		.. "|cffffffff" .. W.L("WoW folder") .. "\\CustomData\\" .. file .. "|r"))
 	tinsert(rows, row("Lines logged but not saved yet", "|cffffffff" .. FmtNum(L:Unsaved()) .. "|r"))
 	tinsert(rows, row("Saved by WhoDidIt this session",
 		W.LF("|cffffffff%s|r lines", FmtNum(L.savedLines)) .. (L.lastSave and ("  |cff888888" .. W.LF("last %s", L.lastSave) .. "|r") or "")))
@@ -4410,12 +4411,30 @@ function UI:LogRows()
 		function() opts.chronSaveOnFight = not opts.chronSaveOnFight end, "WhoDidIt: writes the log to disk after every kill or wipe.")
 	toggle("One log file per realm", L:Setting("includeRealmInFilename"),
 		function() L:ToggleSetting("includeRealmInFilename") end, "Chronicle setting: adds the realm to the file name.")
+	if src == "builtin" then
+		toggle("Own numbered file for every raid and 5-man run", opts.chronSplit ~= false,
+			function() opts.chronSplit = (opts.chronSplit == false) end,
+			"WhoDidIt: raids and 5-mans never mix, and entering a raid tells you its file. Off: everything goes into one file, Chronicle's way.")
+	end
 
 	head(rows, "Uploading to Chronicle")
 	tinsert(rows, row("1.  After the raid click |cffffd100Stop & save|r (or |cffffd100Save now|r)."))
 	tinsert(rows, row("2.  Open |cffffd100chronicleclassic.com|r and click |cffffd100Upload|r."))
 	tinsert(rows, row(W.LF("3.  Choose |cffffffffWoW folder\\CustomData\\%s|r.", file)))
-	tinsert(rows, row("4.  Before your next lockout, |cffffd100Archive log|r or |cffffd100Delete log|r so raids don't mix."))
+	if L:SplitOn() then
+		tinsert(rows, row("4.  Every raid and 5-man run has its own numbered file (below), so nothing needs archiving."))
+		local recent = L:Recent()
+		if table.getn(recent) > 0 then
+			head(rows, "Your log files")
+			for i = 1, math.min(10, table.getn(recent)) do
+				local r = recent[i]
+				tinsert(rows, row("|cffffd100" .. string.format("%03d", r.n) .. "|r  " .. (r.zone or "?") .. "  |cff888888" .. W.LDate("%d %b %H:%M", r.at or 0) .. "|r",
+					"|cffffffff" .. (r.file or "?") .. "|r  |cff888888" .. W.LF("%s lines", FmtNum(r.lines or 0)) .. "|r"))
+			end
+		end
+	else
+		tinsert(rows, row("4.  Before your next lockout, |cffffd100Archive log|r or |cffffd100Delete log|r so raids don't mix."))
+	end
 	tinsert(rows, row("|cff888888Addons can't reach the internet, so the upload itself is done on the website.|r"))
 	return rows
 end

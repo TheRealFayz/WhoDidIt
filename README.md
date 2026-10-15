@@ -485,13 +485,21 @@ WhoDidIt has Chronicle's logger built in: **ChronicleCompanion**, the official a
 ([github.com/Emyrk/ChronicleCompanion](https://github.com/Emyrk/ChronicleCompanion)). It ships in `WhoDidIt\Chronicle\`
 at the version the maintainer tested, credited in `Chronicle\WDI_NOTICE.txt`; nothing to install.
 
-- **It logs nothing until you say yes.** The first time you enter a raid, WhoDidIt asks whether to log your raids
-  (or click **Start logging** on the Chronicle Logs tab). Say no and it stays off; switch it on any time.
+- **It logs nothing until you say yes.** When you enter a raid, WhoDidIt asks whether to log it (or click
+  **Start logging** on the Chronicle Logs tab). Say no and it stays off; switch it on any time.
+- **One numbered file per raid and per 5-man run.** Every raid run gets its own file in `WoW folder\CustomData\`,
+  for example `Chronicle_Upsilon_012_MoltenCore.txt`, and so does every 5-man (`..._013_Scholomance.txt`). Entering a
+  raid pops up its log number and file name, so you know exactly which file to upload. A relog, a run back or a 5-man
+  in between keeps the raid in its own file; a new lockout starts a new one. The open world and battlegrounds stay in
+  Chronicle's own `Chronicle_<Name>.txt`. The tab lists your last log files. **Don't log this raid** on the pop-up
+  skips one raid. Switch it off on the tab to go back to one file, Chronicle's way.
 - **Already use ChronicleCompanion?** If the separate addon is on, WhoDidIt's copy stands down, so nothing is logged
   twice, and it asks once whether to switch the separate one off. **Yes** switches it off and the built-in copy takes
   over from the next login; **No** keeps it with its own settings untouched. A separate copy that's switched off or
   deleted doesn't matter: the built-in one is the logger, and your yes / no above decides whether it logs.
-- **What's changed:** nothing in Chronicle's logging. Its files only run from inside WhoDidIt: they start with
+- **What's changed:** nothing in what Chronicle logs, only which file it goes into (above). Chronicle's "logs from a
+  previous instance ID" pop-up is gone while the numbered files are on: every lockout has its own file anyway (it used
+  to fire after a relog mid-raid and its Archive moved the raid into a hard-to-find backup file). Its files only run from inside WhoDidIt: they start with
   WhoDidIt, take their version from `Chronicle\wdi_version.lua`, and find their minimap icons in the new folder.
   `/chronicle`, `/chron`, `/clog`, the minimap button, the options panel and the log files are all exactly as before.
   Newer Chronicle versions arrive with WhoDidIt updates.
