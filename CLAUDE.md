@@ -90,6 +90,8 @@ World of Warcraft client 1.12.1 (TurtleWoW / OctoWoW), Lua 5.0, with SuperWoW an
   ship in the repo at the pins in tools/EmbedUpdate.ps1 (maintainer tool: move a pin, run it,
   review, commit), each with WDI_NOTICE.txt. The sync helper and AutoSync are maintainer-only
   (they refuse to run on a PC without a B.MASTERS character).
+- A dead boss must not start a fight (Tracker.lua slain / deadBoss): Golemagg's Magma Splash kept ticking after his
+  death and each tick became a 0:03 "kill" that also saved the Chronicle log (MC, 15 Oct 2026).
 - The built-in Chronicle logger logs nothing until the player says yes (opts.chronUse). It stands
   down only while a separate ChronicleCompanion is actually loaded. A disabled or deleted one doesn't
   count: WTF keeps "ChronicleCompanion: disabled" after the hand-over or after the folder is deleted.

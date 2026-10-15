@@ -25,6 +25,18 @@ local ENV = {
 
 local F              -- the live fight, same table as T.fight
 local isBoss = {}    -- guid -> bool
+-- bosses seen dying (a respawn has a new GUID): their damage over time keeps ticking after
+-- death (Golemagg's Magma Splash, MC 15 Oct 2026) and must not start a fight. Forgotten past 500.
+local slain, nSlain = {}, 0
+local function noteSlain(guid)
+	if slain[guid] then return end
+	nSlain = nSlain + 1
+	if nSlain > 500 then slain, nSlain = {}, 1 end
+	slain[guid] = true
+end
+local function deadBoss(guid)
+	return slain[guid] or (W.env.superwow and UnitExists(guid) and UnitIsDead(guid)) and true or false
+end
 
 local function hasFlag(v, flag)
 	if not v or not bit or not bit.band then return false end
@@ -264,6 +276,7 @@ function T:CheckEnd()
 		for g, b in pairs(F.bosses) do
 			if b.name == want and not b.dead and UnitExists(g) and UnitIsDead(g) then
 				b.dead = true
+				noteSlain(g)
 				T:CheckKill()
 			end
 		end
@@ -339,9 +352,9 @@ function T:Damage(src, dst, spell, amt, crit, swing, hitInfo, absorb)
 	local srcN, srcPet = W.Owner(src)
 	local dstN, dstPet = W.Owner(dst)
 	if not F then
-		if srcN and not dstN and T.IsBoss(dst) then
+		if srcN and not dstN and T.IsBoss(dst) and not deadBoss(dst) then
 			T:Start(dst, srcN, "hit")
-		elseif dstN and not srcN and not dstPet and T.IsBoss(src) then
+		elseif dstN and not srcN and not dstPet and T.IsBoss(src) and not deadBoss(src) then
 			T:Start(src, dstN, "aggro")
 		else
 			return
@@ -690,6 +703,7 @@ function T:Died(guid)
 	if not F then return end
 	local b = F.bosses[guid]
 	if b then
+		noteSlain(guid)
 		if not b.dead then
 			b.dead = true
 			b.diedAt = GetTime() - F.t0
@@ -1225,7 +1239,7 @@ W:Every(0.5, function()
 	elseif UnitAffectingCombat("player") and W.env.superwow then
 		-- backup start trigger: your own target is a boss already in combat
 		local g = W.Guid("target")
-		if g and UnitAffectingCombat("target") and T.IsBoss(g) then T:Start(g, nil, "combat") end
+		if g and UnitAffectingCombat("target") and T.IsBoss(g) and not deadBoss(g) then T:Start(g, nil, "combat") end
 	end
 end)
 
