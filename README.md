@@ -625,7 +625,7 @@ Flasks are only expected in the big raids (MC, BWL, AQ40, Naxx, ES, Karazhan).
 - **Fairness:** a player who can't be read (out of range) shows **?**. They're never counted as missing anything.
 
 The spell IDs, the aura names this server really uses and the per-role idea come from **DopingControl** by ShempError
-(MIT licence, [github.com/ShempError/DopingControl](https://github.com/ShempError/DopingControl)).
+(MIT licence, [octowow.st/git/ShempError/DopingControl](https://octowow.st/git/ShempError/DopingControl)).
 With [ClassicAPI](#classicapi-optional), ready checks also list whose flask, elixir or food runs out in under 5 minutes.
 
 ### Open DopingControl (the full raid check)
@@ -639,12 +639,18 @@ DopingControl itself is built into WhoDidIt, exactly as its author made it. Clic
 - **Debuffs**: a column for each debuff actually on the raid.
 - **Resistances**: each player's fire / nature / frost / shadow / arcane total, rebuilt from their gear.
 - **Hit**: melee, ranged and spell hit against the cap, with every source on its own line.
-- **Equipment**: every slot, with missing enchants marked.
+- **Equipment**: every slot, with missing enchants marked and the enchant named in the tooltip.
+- **Addons**: who in the raid runs BigWigs, Threat Meter, EPGP, SuperWoW and Rinse, with versions (newest in green).
+  Opening the tab asks their addons (hidden addon messages to the raid, and to the guild for EPGP / SuperWoW; at most
+  every 30 seconds, never in combat).
 - **Options**: what each role and class is expected to have, a whisper / report button and a minimap button.
 
+It also checks the raid by itself on a ready check and when someone starts a BigWigs pull timer (only you see it).
 A player it can't read is shown as unknown, never as missing. DopingControl ships with WhoDidIt
-(`WhoDidIt\DopingControl\`, MIT licence, at the version the maintainer tested). If you already have DopingControl installed,
-WhoDidIt asks once whether to switch the separate copy off (No keeps it, with its own settings).
+(`WhoDidIt\DopingControl\`, MIT licence, at the version the maintainer tested: 0.7.0). If you already have DopingControl
+installed, WhoDidIt asks once whether to switch the separate copy off (No keeps it, with its own settings).
+
+Updating to 1.26.3: restart WoW fully once (DopingControl 0.7.0 has new files; `/reload` doesn't load new files).
 
 ## Auto-loot (auto master looting)
 
@@ -1100,7 +1106,7 @@ without a licence comes out again if its author asks:
 | --- | --- | --- | --- |
 | [ChronicleCompanion](https://github.com/Emyrk/ChronicleCompanion) | Emyrk | the Chronicle Logs tab (`Chronicle\`, shipped) | none stated |
 | [RollFor](https://github.com/sica42/roll-for-vanilla) (1.12 fork) | Obszczymucha, sica42 | RollForML (`RollFor\`, shipped) | none stated |
-| [DopingControl](https://github.com/ShempError/DopingControl) | ShempError | Open DopingControl, consume data (`DopingControl\`, shipped) | MIT |
+| [DopingControl](https://octowow.st/git/ShempError/DopingControl) | ShempError | Open DopingControl, consume data (`DopingControl\`, shipped) | MIT |
 | [AutoMarker](https://github.com/MarcelineVQ/AutoMarker) | Weird Vibes (MarcelineVQ) | the raid pack data in `PackData.lua` (GUIDs, packs, marks), included with credit, removed on request; not under WhoDidIt's MIT licence | none stated |
 | [Chronicle External API](https://legacy.chronicleclassic.com/developers/api) | Chronicle | every guild's raid times | API terms |
 | [ClassicAPI](https://github.com/brues-code/ClassicAPI) (optional) | brues-code | extras, see above | GPL-3.0 |

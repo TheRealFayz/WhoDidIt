@@ -47,7 +47,7 @@ if WDI_DOPING_SKIP then return end -- DopingControl core/sim.lua
 --   * v6 SLOT MODEL (17 active default columns of the 22-slot table --
 --     the five school protection slots FrR/NR/SR/HR/AR default off and
 --     stay hidden) + identification-ladder showcase: the
---     four TANKs run the full KG tank set (green pill across all 17
+--     four TANKs run the full reference tank set (green pill across all 17
 --     columns); every new column (BL/ZANZA/GAE/SCHOOL/DREAMT/SHARD/ALC)
 --     has HAS, MISSING and NOTEXP cells somewhere in the roster. Generic
 --     "Well Fed" carriers split three ways for the matrix ladder:
@@ -486,6 +486,57 @@ end
 -- ------------------------------------------------------------------
 -- The roster. Deterministic literals only.
 -- ------------------------------------------------------------------
+-- Addons tab: a deterministic mix of replies per roster index (pure
+-- function of the index, so re-builds stay byte-identical). false = queried
+-- and silent (a red cell), nil = never asked (grey ?), a table = a reply as
+-- scan/addons.lua would store it. Guild membership decides which players are
+-- n/a for the two guild-chat columns; class decides Rinse.
+local function simAddons(i)
+    local m = { guild = (math.mod(i, 3) ~= 0) }
+    if math.mod(i, 13) == 0 then
+        m.BIGWIGS = nil
+    elseif math.mod(i, 9) == 0 then
+        m.BIGWIGS = false
+    elseif math.mod(i, 5) == 0 then
+        m.BIGWIGS = { text = "r4498", variant = "Pepo" }
+    elseif math.mod(i, 11) == 0 then
+        m.BIGWIGS = { text = "r120", variant = "Other" }
+    else
+        m.BIGWIGS = { text = "r4521", variant = "Pepo" }
+    end
+    if math.mod(i, 7) == 0 then
+        m.TWT = false
+    elseif math.mod(i, 4) == 0 then
+        m.TWT = { text = "1.2.1" }
+    else
+        m.TWT = { text = "1.2.3" }
+    end
+    if math.mod(i, 6) == 0 then
+        m.EPGP = false
+    elseif math.mod(i, 5) == 0 then
+        m.EPGP = { text = "yes", presenceOnly = true }
+    elseif math.mod(i, 4) == 0 then
+        m.EPGP = { text = "10.20.4" }
+    else
+        m.EPGP = { text = "10.20.5" }
+    end
+    if math.mod(i, 8) == 0 then
+        m.SUPERWOW = { text = "no", flag = false }
+    elseif math.mod(i, 10) == 0 then
+        m.SUPERWOW = false
+    else
+        m.SUPERWOW = { text = "yes", flag = true }
+    end
+    if math.mod(i, 3) == 0 then
+        m.RINSE = false
+    elseif math.mod(i, 5) == 0 then
+        m.RINSE = { text = "2.9" }
+    else
+        m.RINSE = { text = "3.0" }
+    end
+    return m
+end
+
 function DC_Sim.buildStore()
     -- deterministic clock (see header): base for scanAt
     -- and the last-known At offsets below
@@ -526,7 +577,7 @@ function DC_Sim.buildStore()
         -- HPELX Fortitude, ALC RumseyBlack, FR GFPP, SR GSPP (shadow-boss
         -- prep -- NOTEXP/hidden until the SR expectation is enabled, then
         -- the column lights up green for him), MOTW r7, PWF r6,
-        -- SPROT r3 -- the full KG tank set, 0 gaps (green pill)
+        -- SPROT r3 -- the full reference tank set, 0 gaps (green pill)
         weaponMain = true, weaponMainName = "Dense Sharpening Stone",
         gearRead = true,
         resistsRead = true, resists = { [2] = 315 },
@@ -845,7 +896,7 @@ function DC_Sim.buildStore()
         -- FLASK Supreme, AI Brilliance, GAE, SCHOOL FrostPower,
         -- DREAMT, SHARD, ZANZA, MP5 Mageblood, AR GAPP (17549 -- the
         -- arcane carrier of the six-school demo view), MOTW, PWF, SPROT --
-        -- the full KG caster set except FR (her designed gap)
+        -- the full reference caster set except FR (her designed gap)
         weaponMain = true, weaponMainName = "Brilliant Wizard Oil",
         gearRead = true,
         resistsRead = true, resists = { [4] = 85, [6] = 45 },
@@ -1267,6 +1318,10 @@ function DC_Sim.buildStore()
             -- skill, which is exactly what an unknown/new race token does
             -- in the live path too
         end
+    end
+
+    for i = 1, table.getn(players) do
+        players[i].addonSim = simAddons(i)
     end
 
     return { scanAt = now, source = "sim", players = players }

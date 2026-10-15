@@ -13,6 +13,8 @@ if WDI_DOPING_SKIP then return end -- DopingControl ui/options.lua
 --   [x] Show minimap button          -> DC_Minimap.Update() (features/minimap.lua)
 --   [x] Auto-scan on ready check     -> db.readyCheckScan
 --   [x] Auto-open on ready check     -> db.readyCheckOpen
+--   [x] Silent scan on pull timer    -> db.pullTimerScan (scan/pull.lua,
+--                                        never opens the window)
 --   divider
 --   Editor: a tab selector (Consumables / Class buffs / Equipment /
 --     Skill books, O.EditorTabs()) picks ONE of two mutually exclusive
@@ -436,6 +438,7 @@ O.NO_EXPECTATION_TABS = {
     DEBUFFS = true,
     RESIST  = true,
     HIT     = true,
+    ADDONS  = true,
 }
 
 function O.ExpectationTabs()
@@ -1604,6 +1607,19 @@ if CreateFrame then
             function() return db().readyCheckOpen end,
             function(v) db().readyCheckOpen = v end)
         place(cbOpen, -28)
+
+        local cbPull = CreateCheckbox(f, "Silent scan on pull timer",
+            function() return db().pullTimerScan end,
+            function(v) db().pullTimerScan = v end)
+        place(cbPull, -28)
+        AddTooltip(cbPull, "Snapshot the raid the moment ANYONE starts a"
+            .. " BigWigs pull timer (your own /pull included) -- the same"
+            .. " scan as a ready check, but the window is never opened."
+            .. "\nCovers pulls whose ready check does not fire the native"
+            .. " event (some raids route it through a different addon)."
+            .. "\nAt most one such scan every 15 seconds; skipped while a"
+            .. " scan is already running, outside a group, or in"
+            .. " test/demo mode.")
 
         -- ------------------------------------------------------------
         -- divider

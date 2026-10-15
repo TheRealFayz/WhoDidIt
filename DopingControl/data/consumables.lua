@@ -168,8 +168,8 @@ DC.CONSUMABLES = {
     -- the tooltip EFFECT line (scan/aura.lua auras.effects) against the
     -- per-variant discrim patterns below -- first match wins, no match =
     -- nil = the matrix falls back to the slot-generic icon ("food buff,
-    -- unknown which"). The variant list is the food set of the KG
-    -- stacking-rules atom plus the classic raid staples; the discrim
+    -- unknown which"). The variant list is the food set of the
+    -- reference stacking rules plus the classic raid staples; the discrim
     -- patterns are best-effort data (recorded-tooltip verification via
     -- dev/raiddump pending) -- a wrong one is a one-line fix.
     -- ["Food"] (the eating tick) deliberately REMOVED: it is the
@@ -232,7 +232,7 @@ DC.CONSUMABLES = {
     -- Aura names + spell ids wowhead-confirmed 2026-08-11 ("Strike of the
     -- Scorpok" additionally measured live in a 26-man raid). The item
     -- names ride along as alias keys (spellID 0) because the Turtle
-    -- client may surface the permanent aura under the item name (KG
+    -- client may surface the permanent aura under the item name (reference
     -- note); a key that never matches is harmless.
     ["Rage of Ages"]                  = { slot = "BL", spellID = 10667, item = "R.O.I.D.S.",               icon = "inv_stone_15" },
     ["R.O.I.D.S."]                    = { slot = "BL", spellID = 0,     item = "R.O.I.D.S.",               icon = "inv_stone_15" },

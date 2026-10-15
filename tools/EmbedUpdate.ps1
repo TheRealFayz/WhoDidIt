@@ -14,8 +14,9 @@
                         github.com/sica42/roll-for-vanilla (pinned commit, v4.8.1)
                         -> WhoDidIt\RollFor
       DopingControl     the raid consumables / buffs / enchants checker by
-                        ShempError (MIT), github.com/ShempError/DopingControl
-                        (pinned commit) -> WhoDidIt\DopingControl
+                        ShempError (MIT), octowow.st/git/ShempError/DopingControl
+                        since 0.7.0 (github.com/ShempError/DopingControl up to
+                        0.6.4) (pinned commit) -> WhoDidIt\DopingControl
 
     To run from inside WhoDidIt, a few things in their files are changed,
     and nothing else is touched:
@@ -38,13 +39,22 @@
     happens to be newest upstream. To try a newer one: run with -Latest, test
     it in game, then put the commit it prints into Pin and release.
 
-    WhoDidIt-Sync.ps1 runs this every hour. To run it on its own:
+    Hosts that only let browsers through (octowow.st's git shows scripts and
+    git itself an anti-bot page) can't be fetched by this script, and it
+    doesn't try to get past that: download the pinned commit's zip in a
+    browser (the address is in the log line) and give it to -FromZip. The
+    zip's comment holds the commit it was made from (git archive writes it),
+    so a zip of any other commit is refused unless -Latest.
+
+    The maintainer runs it by hand, then commits the result:
       EmbedUpdate.ps1                    check all of them and install updates
       EmbedUpdate.ps1 -Only RollFor      just one (Chronicle, RollFor or Doping)
       EmbedUpdate.ps1 -Force             download and reinstall even if up to date
+      EmbedUpdate.ps1 -Only Doping -FromZip <file.zip>   install from a zip you downloaded
 #>
-param([switch]$Force, [string]$Only = "", [switch]$Latest)
+param([switch]$Force, [string]$Only = "", [switch]$Latest, [string]$FromZip = "")
 $script:EmbedLatest = $Latest
+$script:EmbedZip = $FromZip
 
 $EmbedUA    = "WhoDidIt-EmbedUpdate/1.0 (+https://github.com/bdot89/WhoDidIt)"
 $AddonDir   = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
@@ -79,7 +89,9 @@ $EmbedSpecs = @{
     Doping = @{
         Name = "DopingControl"; Key = "DOPING"; Addon = "DopingControl"; Dest = "DopingControl"
         Repo = "ShempError/DopingControl"; Ref = "branch"; Branch = "main"; SubDir = ""
-        Pin = "32403474ebb711c403a3a484bb383d567b7d4a03"; PinLabel = "0.6.4"
+        # moved to OctoWoW's git with 0.7.0; it only lets browsers through (see -FromZip)
+        Web = "https://octowow.st/git/ShempError/DopingControl"; Manual = $true
+        Pin = "e6561d3bceed6567716b2425cf9c26a3e121e6ba"; PinLabel = "0.7.0"; PinDate = "2026-10-15"
         VersionFn = "WDI_DopingVersion"; EqualsName = $true; Bindings = $false
         Begin = "# >>> DopingControl files (generated)"; End = "# <<< DopingControl files"
         # its .toc lists a developer-only file (dev\raiddump.lua) that isn't published
@@ -122,7 +134,9 @@ function Test-WowRunning {
     foreach ($p in Get-Process -ErrorAction SilentlyContinue) {
         try {
             if ($p.Path -and $p.Path.StartsWith($EmbedWow + "\", [StringComparison]::OrdinalIgnoreCase)) { return $true }
-        } catch { }
+            # Windows hides the path of a game started as administrator: a WoW we can't place counts
+            if (-not $p.Path -and $p.ProcessName -match '^WoW') { return $true }
+        } catch { if ($p.ProcessName -match '^WoW') { return $true } }
     }
     return $false
 }
@@ -131,8 +145,43 @@ function Get-GitHub($url) {
     Invoke-RestMethod -Uri $url -TimeoutSec 30 -Headers @{ "User-Agent" = $EmbedUA; "Accept" = "application/vnd.github+json" }
 }
 
+# where the addon's source is published
+function Get-EmbedWeb($s) { if ($s.Web) { $s.Web } else { "https://github.com/$($s.Repo)" } }
+
+# the commit a git archive zip was made from: git writes it as the zip's comment
+function Get-ZipCommit([string]$path) {
+    $b = [IO.File]::ReadAllBytes($path)
+    for ($i = $b.Length - 22; $i -ge [Math]::Max(0, $b.Length - 65557); $i--) {
+        if ($b[$i] -eq 0x50 -and $b[$i + 1] -eq 0x4B -and $b[$i + 2] -eq 0x05 -and $b[$i + 3] -eq 0x06) {
+            $n = [BitConverter]::ToUInt16($b, $i + 20)
+            if ($i + 22 + $n -gt $b.Length) { break }
+            $c = [Text.Encoding]::ASCII.GetString($b, $i + 22, $n).Trim()
+            if ($c -match '^[0-9a-f]{40}$') { return $c }
+            break
+        }
+    }
+    throw "'$path' doesn't say which commit it was made from (download it from the commit's archive link)"
+}
+
 # the commit to install: the latest release's, or the branch head
 function Get-EmbedTarget($s) {
+    # a zip the maintainer downloaded (-FromZip): the pinned commit, unless -Latest
+    if ($script:EmbedZip) {
+        $zip = (Resolve-Path -LiteralPath $script:EmbedZip).Path
+        $sha = Get-ZipCommit $zip
+        if ($s.Pin -and $sha -ne $s.Pin -and -not $script:EmbedLatest) {
+            throw "the zip is commit $($sha.Substring(0, 7)), not the pinned $($s.Pin.Substring(0, 7)) ($($s.PinLabel)); move the Pin, or add -Latest to try it"
+        }
+        $pinned = ($sha -eq $s.Pin)
+        $date = if ($pinned -and $s.PinDate) { $s.PinDate } else { (Get-Date).ToString("yyyy-MM-dd") }
+        $label = if ($pinned) { "pinned " + $s.PinLabel } else { "from a zip" }
+        return @{ sha = $sha; date = $date; label = $label; zip = $zip }
+    }
+    # a host this script can't read: only the pin, installed from a zip
+    if ($s.Manual) {
+        if ($script:EmbedLatest) { throw "this script can't read $(Get-EmbedWeb $s); look for a newer version there" }
+        return @{ sha = $s.Pin; date = $s.PinDate; label = "pinned " + $s.PinLabel; manual = $true }
+    }
     # the tested version, unless -Latest asks for the newest
     if ($s.Pin -and -not $script:EmbedLatest) {
         $c = Get-GitHub "https://api.github.com/repos/$($s.Repo)/commits/$($s.Pin)"
@@ -250,10 +299,12 @@ function New-EmbedBindings($s, $info) {
 function Build-EmbedStaging($s, $t) {
     $p = Get-EmbedPaths $s
     $short = $t.sha.Substring(0, 7)
-    $zip = Join-Path $env:TEMP "wdi-$($s.Dest)-$short.zip"
+    $zip = if ($t.zip) { $t.zip } else { Join-Path $env:TEMP "wdi-$($s.Dest)-$short.zip" }
     $tmp = Join-Path $env:TEMP "wdi-$($s.Dest)-$short"
     try {
-        Invoke-WebRequest -Uri "https://codeload.github.com/$($s.Repo)/zip/$($t.sha)" -OutFile $zip -UseBasicParsing -TimeoutSec 120 -Headers @{ "User-Agent" = $EmbedUA }
+        if (-not $t.zip) {
+            Invoke-WebRequest -Uri "https://codeload.github.com/$($s.Repo)/zip/$($t.sha)" -OutFile $zip -UseBasicParsing -TimeoutSec 120 -Headers @{ "User-Agent" = $EmbedUA }
+        }
         if (Test-Path $tmp) { Remove-Item $tmp -Recurse -Force }
         Expand-Archive -LiteralPath $zip -DestinationPath $tmp -Force
         $src = (Get-ChildItem -LiteralPath $tmp -Directory | Select-Object -First 1).FullName
@@ -298,6 +349,9 @@ function Build-EmbedStaging($s, $t) {
             $files = @($files | Where-Object { Test-Path -LiteralPath (Join-Path $src $_) })
         }
         Copy-EmbedTree $src $p.new
+        # WhoDidIt's own credit note in the folder (not in their download)
+        $notice = Join-Path $p.dir "WDI_NOTICE.txt"
+        if (Test-Path -LiteralPath $notice) { Copy-Item -LiteralPath $notice -Destination (Join-Path $p.new "WDI_NOTICE.txt") }
         $bad = @()
         foreach ($f in $files) {
             $fp = Join-Path $p.new $f
@@ -314,7 +368,7 @@ function Build-EmbedStaging($s, $t) {
 
         $v = New-Object System.Collections.Generic.List[string]
         $v.Add("-- Generated by WhoDidIt's tools\WhoDidIt-Sync - do not edit.")
-        $v.Add("-- $($s.Addon) from https://github.com/$($s.Repo) ($($t.label), commit $($t.sha))")
+        $v.Add("-- $($s.Addon) from $(Get-EmbedWeb $s) ($($t.label), commit $($t.sha))")
         $v.Add("-- savedvariables: " + $meta["SavedVariables"])
         $v.Add("-- savedvariablespercharacter: " + $meta["SavedVariablesPerCharacter"])
         foreach ($f in $files) { $v.Add("-- file: $f") }
@@ -328,7 +382,7 @@ function Build-EmbedStaging($s, $t) {
         if (Test-Path $p.new) { Remove-Item $p.new -Recurse -Force -ErrorAction SilentlyContinue }
         throw
     } finally {
-        Remove-Item $zip -Force -ErrorAction SilentlyContinue
+        if (-not $t.zip) { Remove-Item $zip -Force -ErrorAction SilentlyContinue }
         Remove-Item $tmp -Recurse -Force -ErrorAction SilentlyContinue
     }
 }
@@ -380,6 +434,11 @@ function Update-Embedded($s, [switch]$Force) {
         Log "$($s.Name): v$($have.version) is up to date"
         return
     }
+    if ($t.manual) {
+        Log ("$($s.Name): the pin is $($s.PinLabel) ($($s.Pin.Substring(0, 7))) but " + $(if ($have) { "v$($have.version) is installed" } else { "it isn't installed" }) + ".")
+        Log "$($s.Name): download $(Get-EmbedWeb $s)/archive/$($s.Pin).zip in a browser, then run EmbedUpdate.ps1 -Only $(@($EmbedSpecs.Keys | Where-Object { $EmbedSpecs[$_] -eq $s })[0]) -FromZip <the zip>"
+        return
+    }
     $staged = Get-EmbedInfo $s $p.new
     if (-not $Force -and $staged -and $staged.commit -eq $t.sha) {
         Log "$($s.Name): v$($staged.version) is downloaded and installs when WoW is closed"
@@ -418,6 +477,7 @@ function Update-Doping([switch]$Force) { Update-Embedded $EmbedSpecs.Doping -For
 if ($MyInvocation.InvocationName -ne ".") {
     $ErrorActionPreference = "Stop"
     [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+    if ($FromZip -and -not $EmbedSpecs.ContainsKey($Only)) { throw "-FromZip needs -Only Chronicle, RollFor or Doping (the addon the zip is)" }
     foreach ($k in @("Chronicle", "RollFor", "Doping")) {
         if ($Only -and $Only -ne $k) { continue }
         Update-Embedded $EmbedSpecs[$k] -Force:$Force

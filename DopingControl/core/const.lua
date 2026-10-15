@@ -36,9 +36,12 @@ DC.STATE = {
 -- no gaps, no sums, no whisper (see the slot tables below and
 -- core/model.lua's per-tab branches). HIT sits between RESIST and
 -- EQUIPMENT because it answers the same "how is this player set up"
--- question as the resistances, only for the attack side.
+-- question as the resistances, only for the attack side. ADDONS is the last
+-- tab: it checks the raid's addons (scan/addons.lua), no expectations, no
+-- whisper; a column with no reply after a query window is a red gap.
 -- ------------------------------------------------------------------
-DC.TABS = { "CONSUMABLES", "CLASSBUFFS", "DEBUFFS", "RESIST", "HIT", "EQUIPMENT" }
+DC.TABS = { "CONSUMABLES", "CLASSBUFFS", "DEBUFFS", "RESIST", "HIT", "EQUIPMENT",
+            "ADDONS" }
 
 DC.TAB_LABEL = {
     CONSUMABLES = "Consumables",
@@ -47,6 +50,7 @@ DC.TAB_LABEL = {
     RESIST      = "Resistances",
     HIT         = "Hit",
     EQUIPMENT   = "Equipment",
+    ADDONS      = "Addons",
 }
 
 -- ------------------------------------------------------------------
@@ -64,6 +68,41 @@ DC.SLOTS_RESIST = {
     { id = "RFROST", label = "FRO", sub = "frost",  full = "Frost resistance",  kind = "resist", school = 4 },
     { id = "RSHAD",  label = "SHA", sub = "shadow", full = "Shadow resistance", kind = "resist", school = 5 },
     { id = "RARC",   label = "ARC", sub = "arcane", full = "Arcane resistance", kind = "resist", school = 6 },
+}
+
+-- ------------------------------------------------------------------
+-- ADDONS tab slot table (static). One column per addon the raid leader
+-- cares about. Other raiders do not run DopingControl, so every column is
+-- detected only through what that addon itself sends or answers; `how`
+-- and `limits` feed the column header tooltip. `sw` marks the SuperWoW
+-- column, which has no version (yes/no).
+-- ------------------------------------------------------------------
+DC.SLOTS_ADDONS = {
+    { id = "BIGWIGS", label = "BW",  sub = "boss mod", full = "BigWigs", kind = "addon",
+      how = "Asks the raid with BigWigs' own version query; every BigWigs"
+          .. " client answers with its revision.",
+      limits = "Raid groups only (not party). Forks answer in their own"
+          .. " format; revisions are only compared within the same fork." },
+    { id = "TWT",     label = "THR", sub = "threat",   full = "Threat Meter", kind = "addon",
+      how = "Asks the group with the TW Threatmeter 'who' query; each"
+          .. " client answers with its version.",
+      limits = "Other threat meters are not detected." },
+    { id = "EPGP",    label = "EPG", sub = "epgp",     full = "EPGP", kind = "addon",
+      how = "shootyepgp announces its version when it loads, and answers the"
+          .. " SuperWoW query below, which proves it is installed.",
+      limits = "Guild members only. The version is only known if that"
+          .. " player logged in while you were listening." },
+    { id = "SUPERWOW", label = "SW", sub = "superwow", full = "SuperWoW", kind = "addon",
+      how = "Asked via shootyepgp: its answer says whether SuperWoW is"
+          .. " present (yes/no).",
+      limits = "Guild members running shootyepgp only. The SuperWoW DLL"
+          .. " itself cannot be detected." },
+    { id = "RINSE",   label = "RIN", sub = "dispel",   full = "Rinse", kind = "addon",
+      how = "Asks the group with the UpsiRinse version query; it answers"
+          .. " with its version.",
+      limits = "Only dispellers (Druid, Priest, Paladin, Shaman, Mage) are"
+          .. " checked, and only the UpsiRinse fork answers - the original"
+          .. " Rinse does not." },
 }
 
 -- ------------------------------------------------------------------

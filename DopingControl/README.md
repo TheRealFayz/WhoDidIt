@@ -17,6 +17,16 @@ without it.
 in the cells, ready pills per role group, gaps first, unreadable players marked instead of
 blamed.*
 
+## What's new — v0.7.0 · 2026-10-15
+
+- **A new Addons tab** shows which raid addons the other raiders run — BigWigs, Threat Meter,
+  EPGP, SuperWoW and Rinse — with the version in every cell and the newest one marked. The
+  other raiders do not need DopingControl; see [The Addons tab](#the-addons-tab).
+- **The Equipment tooltip names the enchant.** Hovering a slot now says "Enchant: Crusader"
+  or "Enchant: Agility +15" instead of only "Enchanted", including server-custom enchants.
+- **Seven tabs now**, and the footer, the filter and the test mode (`/dc test`) work on the
+  new tab as well.
+
 ## What's new — v0.6.4 · 2026-08-30
 
 - **The belt is checked.** The waist slot was never scanned (v0.6.2), is expected equipment
@@ -25,6 +35,8 @@ blamed.*
 
 **Version history** — details in [CHANGELOG.md](CHANGELOG.md):
 
+- **v0.7.0** — the **Addons tab** (BigWigs, Threat Meter, EPGP, SuperWoW, Rinse across the raid);
+  the Equipment tooltip names the enchant.
 - **v0.6.4** — the equipment expectation top-up self-heals on every refresh, so a profile
   saved before the waist column existed picks it up without a relogin.
 - **v0.6.3** — the waist slot is expected equipment by default for every role.
@@ -91,7 +103,7 @@ blamed.*
 
 *(Click any thumbnail for full size.)*
 
-## The six tabs
+## The seven tabs
 
 **Consumables** — eleven slots per player: Flask, Food buff, Attack power, Strength, Agility,
 Spell power, Mana regen, Armor, Stamina, **Fire protection**, and the temporary weapon buff
@@ -129,7 +141,10 @@ the two that may legitimately be empty**: an empty off hand (you carry a two-han
 empty ranged slot have nothing to enchant and are marked *not expected* instead. The
 expectation grid only governs whether the *enchant* question is tracked. Slots where no enchant exists for that item or class are marked
 *not expected* rather than red. Hovering a tile shows the **native item tooltip**, so you see
-the exact enchant — not merely that one is present.
+the exact enchant — not merely that one is present — and the tooltip names it
+("Enchant: Crusader", "Enchant: Agility +15"), from a table generated from the game client's own
+enchant data, so server-custom enchants are named too. An enchant that is not in the table shows
+as "enchant #<id>": still known to be enchanted, never reported as missing.
 
 **Hit** — melee, ranged and one column **per spell school**, because talents and items raise
 schools individually: one "spell hit" number would be wrong for most casters. There is no hit
@@ -154,6 +169,67 @@ Two things about that number are worth stating plainly:
 A quest weapon-skill book (+3 skill, about 0.6% hit) is the one input that **cannot** be read
 off another player — no channel reports foreign weapon skills. It is ticked by hand in the
 **Skill books** options tab: one row per scanned player, one column per weapon skill.
+
+### The Addons tab
+
+<img src="screenshots/addons.png" alt="The Addons tab on a simulated raid: versions with a check, outdated versions with an exclamation mark, missing addons in red, unreadable players as a grey question mark, not-expected cells as a dot" width="100%">
+
+*The Addons tab with the check finished (test mode, simulated raid): one row per raider, one
+column per addon, the version in each cell. Every cell state is visible: a version with a check,
+a version with `!`, a red missing cell, a grey `?` for an unreadable player and a dot where the
+addon is not expected.*
+
+The question this tab answers is **"who in my raid runs the addons I rely on?"** — BigWigs,
+Threat Meter (TW Threatmeter), EPGP (shootyepgp), SuperWoW and Rinse. There are no
+expectations to set and nothing to whisper; it is a display tab like Resistances and Hit.
+
+**How it checks.** The other raiders do **not** need DopingControl. Each column is detected only
+through what that addon itself sends or answers: BigWigs' own version query, the Threat Meter
+"who" query, shootyepgp's version announcement (and its SuperWoW reply), and the UpsiRinse
+version query. DopingControl sends the queries those addons already understand and reads the
+answers.
+
+- The **Check addons** button sends one burst of queries and collects replies for six seconds.
+  The status line next to it counts the window down.
+- Opening the tab runs one check automatically, at most every 30 seconds, and only out of
+  combat. Joining a raid does not trigger one.
+- Besides that, a passive listener records the versions addons announce on their own, and
+  forgets raiders who left the group.
+- Your own row is read from your own addon list, not from replies.
+
+**The cells.**
+
+| Cell | Meaning |
+|---|---|
+| Green, version, check mark | The addon is there and this is the **newest version in the raid** (your own row counts). |
+| Green, version, "!" | The addon is there but **older than the newest** version seen, or the version cannot be compared. The tooltip names the newest. |
+| Red | **No reply** after the query window passed. |
+| Grey "?" | **Not asked yet** (or the player is offline). Silence before any query is never shown as red. |
+| Dot | **Not applicable** — see the limits below. |
+
+Hovering a cell shows the version, the raw reply, which fork answered and how long ago it was
+seen. SuperWoW has no version: its cell says `yes` (green) or `no` (red).
+
+**What each column can and cannot tell you.** Red means *no reply*, and that is not always
+"not installed" — it can also be an old version or a fork that does not answer. The tooltip on
+a red cell says exactly that, and each column header carries its own limits:
+
+- **BW (BigWigs)** — raid groups only, not party. Forks answer in their own format, and
+  revision numbers are compared only **within the same fork**.
+- **THR (Threat Meter)** — only TW Threatmeter answers; other threat meters are not detected.
+- **EPG (EPGP)** — members of **your own guild** only, and only if they run shootyepgp. The
+  version is known only if that player's announcement reached you; a
+  reply to the SuperWoW query alone proves the addon is installed but carries no version.
+- **SW (SuperWoW)** — also guild members running shootyepgp only: SuperWoW itself cannot be seen
+  from outside, so shootyepgp answers for it. A raider outside your guild shows a dot, not red.
+- **RIN (Rinse)** — only dispellers (Druid, Priest, Paladin, Shaman, Mage) are checked; everyone
+  else shows a dot. Only the **UpsiRinse** fork answers the query, so a raider with the original
+  Rinse shows red even though the addon is installed.
+
+**Reading the totals.** Each class group's header counts the players, the gaps (red cells) and
+how many answered. The footer **MISSING PER ADDON** counts the red cells per column, and the
+**Gaps only** filter hides every raider with no red and no grey cell, so rows that still await an
+answer stay visible. `/dc test` fills the tab with a deterministic mix of all states.
 
 ## Honest by design
 
@@ -204,7 +280,7 @@ toggle to switch a whole expectation on or off at once.
 ## Test mode
 
 `/dc test` swaps the live group for a **deterministic simulated 40-player raid** — same roster,
-same gaps, every time. The full UI (all six tabs, roles, pills, report preview) can be
+same gaps, every time. The full UI (all seven tabs, roles, pills, report preview) can be
 inspected and configured without being in a group, and all chat output is disabled while test
 mode is on, so nothing simulated can ever reach another player.
 
@@ -220,7 +296,7 @@ expectations are never modified, and the mode itself is not saved either, so a r
 **Option A — download (simplest):**
 
 1. Grab **`DopingControl-vX.Y.Z.zip`** from
-   [**Releases**](https://github.com/ShempError/DopingControl/releases).
+   [**Releases**](https://octowow.st/git/ShempError/DopingControl/releases).
    *(Use the Release zip, not "Code → Download ZIP" — that names the folder
    `DopingControl-main`, which WoW won't load.)*
 2. Extract the **`DopingControl`** folder into `Interface\AddOns\`.
@@ -230,7 +306,7 @@ expectations are never modified, and the mode itself is not saved either, so a r
 
 ```
 cd Interface/AddOns
-git clone https://github.com/ShempError/DopingControl.git DopingControl
+git clone https://octowow.st/git/ShempError/DopingControl.git DopingControl
 ```
 
 `main` is the stable release channel — git-based addon managers stay current with a

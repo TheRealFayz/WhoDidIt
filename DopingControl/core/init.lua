@@ -75,6 +75,75 @@ function DC.SetTestMode(v)
 end
 
 -- ------------------------------------------------------------------
+-- The pre-raid check, automated.
+--
+-- db.testMode is persisted (core/config.lua DEFAULTS), so it survives a
+-- reload and a relog: a session that ends with the simulated raid on
+-- screen starts the next one showing it again, and from then on the
+-- matrix grades a roster that does not exist. On screen the only marker
+-- is the source banner, and a "MISSING" wall reads the same either way --
+-- so the failure mode is not a visible error, it is a plausible wrong
+-- answer, which is the worst kind for a raid buff checker.
+--
+-- Remembering to check before every raid is not a routine anyone keeps.
+-- The addon does it instead, at the two moments it matters: once per
+-- login/reload, and again when a group forms.
+--
+-- DC.SimModeReminder(db, demoMode) -> string|nil
+--   The line to print, or nil when neither simulated mode owns the
+--   store. Pure -- the caller prints it, so it stays offline-testable.
+--   Test mode is named first because it is the persisted one: the mode
+--   that comes back on its own is the one this exists for. Demo mode is
+--   transient (core/demo.lua) and cannot survive a reload, but it can
+--   still be on when the raid forms, so it gets the same reminder with
+--   its own switch named -- naming the wrong switch would send the user
+--   to a toggle that changes nothing.
+--   db/demoMode are optional; the fallback matches DC.SimOwnsStore.
+-- ------------------------------------------------------------------
+function DC.SimModeReminder(db, demoMode)
+    db = db or DC.db or DopingControlDB
+    if db and db.testMode then
+        return "test mode is ON - the matrix shows the simulated raid, not your group (/dc test to leave)"
+    end
+    if demoMode == nil then
+        demoMode = DC.demoMode
+    end
+    if demoMode then
+        return "demo mode is ON - the matrix shows the simulated raid, not your group (/dc demo to leave)"
+    end
+    return nil
+end
+
+-- ------------------------------------------------------------------
+-- DC.NoteGroupSize(n) -> bool
+--
+-- Edge detector for "a group just formed": true only on the 0 -> >0
+-- transition. The roster events fire once per member, so a 40-man raid
+-- filling up would otherwise print the reminder 39 times. Pure apart
+-- from its own last-seen counter, which starts at 0 (solo).
+-- ------------------------------------------------------------------
+local lastGroupSize = 0
+
+function DC.NoteGroupSize(n)
+    n = n or 0
+    local joined = (lastGroupSize == 0 and n > 0)
+    lastGroupSize = n
+    return joined
+end
+
+-- Raid count first, party count only when it is 0: the two calls do not
+-- agree on what "in a party" means once a raid exists, and the raid
+-- answer is the unambiguous one. Returns 0 offline (no WoW API).
+local function GroupSize()
+    local n = GetNumRaidMembers and GetNumRaidMembers() or 0
+    if n and n > 0 then
+        return n
+    end
+    n = GetNumPartyMembers and GetNumPartyMembers() or 0
+    return n or 0
+end
+
+-- ------------------------------------------------------------------
 -- /dc unknown -- dump DC.unknownSeen via SuperWoW ExportFile.
 -- ------------------------------------------------------------------
 function DC.DumpUnknown()
@@ -253,8 +322,31 @@ if CreateFrame then
                 DC.store = DC_Sim.buildStore()
             end
 
+            -- ...and say so. Not here though: chat output before
+            -- PLAYER_ENTERING_WORLD is silently dropped (verified), so
+            -- the reminder waits for that event.
+            ev:RegisterEvent("PLAYER_ENTERING_WORLD")
+
+        elseif event == "PLAYER_ENTERING_WORLD" then
+            -- Fires on every loading screen, not just login -- once is
+            -- the point, so this unregisters itself. The group-join
+            -- reminder below covers the rest of the session.
+            ev:UnregisterEvent("PLAYER_ENTERING_WORLD")
+            local warn = DC.SimModeReminder(DC.db)
+            if warn then
+                DC.Print(warn)
+            end
+
         elseif event == "RAID_ROSTER_UPDATE" or event == "PARTY_MEMBERS_CHANGED" then
             local db = DC.db
+            -- A group just formed: the last moment before a raid where
+            -- a forgotten simulated mode is still cheap to notice.
+            if DC.NoteGroupSize(GroupSize()) then
+                local warn = DC.SimModeReminder(db)
+                if warn then
+                    DC.Print(warn)
+                end
+            end
             if db and not DC.SimOwnsStore(db) and MatrixIsShown() then
                 DC_Scan.Start()
             end

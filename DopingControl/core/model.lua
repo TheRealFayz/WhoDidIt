@@ -257,8 +257,8 @@ if WDI_DOPING_SKIP then return end -- DopingControl core/model.lua
 --     channel.
 --   * rowVM.gearUnreadable = (tab=="EQUIPMENT" and readable and not
 --     player.gearRead) -- the cross-continent inspect-limit case.
---     rowVM.unreadNote = "offline" for offline rows, an "items not
---     readable" observation for
+--     rowVM.unreadNote = "offline" for offline rows, a "gear not read"
+--     observation for
 --     gearUnreadable rows, nil otherwise.
 --
 -- Per-class expectations + DEBUFFS warning semantics:
@@ -578,6 +578,30 @@ function M.classify(player, slotdef, expected, books)
             detail = detail .. " (from gear)"
         end
         return S.HAS, detail, nil, nil, v
+    end
+
+    if kind == "addon" then
+        -- ADDONS tab: the cell is the evaluated reply scan/addons.lua put
+        -- on player.addons[slot] ({ status = ok | old | missing | na |
+        -- unknown, text, mark, ... }). Silence is NEVER missing on its own:
+        -- scan/addons.lua only says "missing" after a query window passed
+        -- for a member who was in the group when the query went out, or
+        -- when the addon is known absent (own row, SuperWoW answer "0").
+        local a = player.addons and player.addons[slotdef.id]
+        if player.online == false then
+            return S.UNKNOWN, { status = "unknown", why = "offline" }
+        end
+        if not a then
+            return S.UNKNOWN, { status = "unknown", why = "not asked yet" }
+        end
+        if a.status == "ok" or a.status == "old" then
+            return S.HAS, a, nil, nil, a.text
+        elseif a.status == "missing" then
+            return S.MISSING, a, nil, nil, a.text
+        elseif a.status == "na" then
+            return S.NOTEXP, a
+        end
+        return S.UNKNOWN, a
     end
 
     if kind == "hit" then
@@ -914,7 +938,7 @@ end
 --            expect[role][class][slotId] = true|nil; unknown (role,
 --            class) combos fall back to the DC.DEFAULT_EXPECT role line
 --   tab    = "CONSUMABLES" | "CLASSBUFFS" | "DEBUFFS" | "RESIST" |
---            "HIT" | "EQUIPMENT"
+--            "HIT" | "EQUIPMENT" | "ADDONS"
 --   now    = optional clock (GetTime seconds) for cell.last.age -- nil
 --            => no ages computed
 --   books  = optional db.skillBooks (weapon-skill-book flags per player
@@ -942,7 +966,7 @@ end
 -- the four places that implement those rules cannot drift apart when a
 -- third display tab appears.
 function M.IsDisplayTab(tab)
-    return tab == "RESIST" or tab == "HIT"
+    return tab == "RESIST" or tab == "HIT" or tab == "ADDONS"
 end
 
 -- ==================================================================
@@ -971,17 +995,35 @@ function M.ChannelRead(p, tab)
         return (p.hit and p.hit.hitRead) and true or false
     elseif tab == "EQUIPMENT" then
         return p.gearRead and true or false
+    elseif tab == "ADDONS" then
+        return p.addonsAnswered and true or false
     end
     return p.aurasRead and true or false
 end
 
 -- ==================================================================
 -- CoverageLabel(tab) -> string
--- The noun behind the coverage number. "readable" used to sit on the
--- pill AND (as "AVERAGE (READABLE)") in the footer while meaning two
--- different populations; naming the channel on the pill removes the
--- collision instead of papering over it, and says in-game which read
--- the number is about. Plain ASCII -- the 1.12 chat/UI font.
+-- The noun behind the coverage number.
+--
+-- ONE MEANING OF "readable" (decided 2026-09-03, applies to code, UI
+-- strings and the chat report alike):
+--   "readable" = the PLAYER could be read at all this scan, i.e.
+--   row.readable / player.aurasRead (online and the aura channel
+--   answered). It is the row-level status behind the "Not readable"
+--   list, the "N unreadable" chips, the group "N/N readable" chip and
+--   the pill on the aura-fed tabs. Nothing else is ever called
+--   "readable".
+--   Every OTHER read population is named by its channel and never by
+--   the word "readable": "gear read", "hit read", "resist read". That
+--   covers the pill on those tabs, the footer strip ("AVERAGE (HIT
+--   READ)"), the report header line and the cell tooltips.
+-- History: "readable" used to sit on the pill AND (as "AVERAGE
+-- (READABLE)") in the footer while meaning two different populations;
+-- naming the channel removes the collision instead of papering over
+-- it, and says in-game which read the number is about. This function
+-- is the single source of that noun -- the footer label (ui/matrix.lua
+-- MX.FooterLabel) and the pill both derive from it. Plain ASCII -- the
+-- 1.12 chat/UI font.
 -- ==================================================================
 function M.CoverageLabel(tab)
     if tab == "RESIST" then
@@ -990,6 +1032,8 @@ function M.CoverageLabel(tab)
         return "hit read"
     elseif tab == "EQUIPMENT" then
         return "gear read"
+    elseif tab == "ADDONS" then
+        return "answered"
     end
     return "readable"
 end
@@ -1122,6 +1166,10 @@ function M.build(store, roleOf, expect, tab, now, books)
         -- static columns, always all 8 (melee, ranged, six schools) --
         -- the second display-only tab, same rules throughout
         slots = DC.SLOTS_HIT or {}
+    elseif tab == "ADDONS" then
+        -- static columns (one per checked addon); a display tab, but a
+        -- column with no reply after a query window is a real MISSING cell
+        slots = DC.SLOTS_ADDONS or {}
     else
         local allSlots = tabSlots(tab)
         -- Dynamic columns: a slot is active
@@ -1269,7 +1317,7 @@ function M.build(store, roleOf, expect, tab, now, books)
             local sd = slots[si]
             local expd = false
             if sd.kind == "debuff" or sd.kind == "resist"
-               or sd.kind == "hit" then
+               or sd.kind == "hit" or sd.kind == "addon" then
                 -- expectations are NOT consulted on debuff/resist/hit
                 -- columns; classify ignores the flag anyway
                 expd = true
@@ -1282,6 +1330,11 @@ function M.build(store, roleOf, expect, tab, now, books)
                              icon = icon, item = item }
             if sd.kind == "resist" then
                 cells[sd.id].value = value
+            elseif sd.kind == "addon" then
+                -- the evaluated reply (version text, check/bang mark,
+                -- newest, raw reply, age) rides along for paint + tooltip
+                cells[sd.id].value = value
+                cells[sd.id].addon = detail
             elseif sd.kind == "hit" then
                 -- value/cap/capMet are lifted out of the breakdown table
                 -- so the UI can paint a cell without unpacking it; they
@@ -1416,7 +1469,15 @@ function M.build(store, roleOf, expect, tab, now, books)
             -- ONE way the gear read comes back empty -- the full sentence
             -- lives in the row-spanning message and the cell tooltip,
             -- where there is space for it.
-            row.unreadNote = "items not readable"
+            -- "gear not read", never "not readable": this chip sits right
+            -- next to the group header's "N/N readable" chip (row.readable,
+            -- the aura channel), and this row IS one of those readable
+            -- rows -- only its EQUIPMENT channel came back empty. Reusing
+            -- "readable" here would contradict the header a word away, so
+            -- the gear channel keeps its own noun (CoverageLabel's "gear
+            -- read") negated, same as the row-spanning text below and the
+            -- cell tooltips.
+            row.unreadNote = "gear not read"
         end
         if readable and tab ~= "DEBUFFS" and not M.IsDisplayTab(tab) then
             -- Sums over determinate cells only: UNKNOWN is excluded from
@@ -1636,11 +1697,13 @@ function M.reportLines(vm, tabLabel, timeStr)
     -- all, one average line per column instead. Early return: the
     -- gap-oriented machinery below (order/footer/debuffMore) does not
     -- apply here.
-    if M.IsDisplayTab(vm.tab) then
+    if M.IsDisplayTab(vm.tab) and vm.tab ~= "ADDONS" then
+        -- population noun = the tab's own channel (M.CoverageLabel),
+        -- never "readable" -- that word is reserved for row readability
         if vm.tab == "HIT" then
-            table.insert(lines, "Hit (average, readable players):")
+            table.insert(lines, "Hit (average, hit-read players):")
         else
-            table.insert(lines, "Resistances (average, readable players):")
+            table.insert(lines, "Resistances (average, resist-read players):")
         end
         local nSlots = table.getn(vm.slots)
         for i = 1, nSlots do
@@ -1684,6 +1747,9 @@ function M.reportLines(vm, tabLabel, timeStr)
     -- "Missing per slot:".
     if vm.tab == "DEBUFFS" then
         table.insert(lines, "Debuffs:")
+    elseif vm.tab == "ADDONS" then
+        table.insert(lines, "No reply (addon missing, or an old version /"
+            .. " fork that does not answer):")
     else
         table.insert(lines, "Missing per slot:")
     end

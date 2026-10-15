@@ -65,6 +65,13 @@ World of Warcraft client 1.12.1 (TurtleWoW / OctoWoW), Lua 5.0, with SuperWoW an
   ticker in Board.lua) when adding file-level locals they use.
 - Code from other repositories enters this one through a reviewed commit, never through a
   bot. Embedded addons are pinned to tested commits (tools/EmbedUpdate.ps1, Pin).
+- DopingControl moved to octowow.st/git/ShempError/DopingControl with 0.7.0 (a fresh one-commit repo; GitHub stops
+  at 0.6.4). That host shows git, PowerShell and the updater an anti-bot page, so its spec is Manual: download
+  <Web>/archive/<Pin>.zip in a browser and run EmbedUpdate.ps1 -Only Doping -FromZip <zip> (the zip's comment is the
+  commit; another commit is refused). Don't make the tool pass as curl to get round the challenge.
+- 0.7.0 replaces the global SendAddonMessage (scan/pull.lua, pass-through, pcall-guarded: every WhoDidIt send goes
+  through it) and its Addons tab sends BigWigs / TWT / Rinse queries to the raid and SWOW_Q to GUILD (tab open, at
+  most every 30 s, never in combat). Reviewed 15 Oct 2026: no loader wrap needed.
 - Event handlers run through pcall. Errors are printed once and kept for bug reports
   (/wdi errors).
 - Blame needs evidence. When the data is ambiguous, show it as information with 0 points.

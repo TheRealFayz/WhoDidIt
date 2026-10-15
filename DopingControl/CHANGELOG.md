@@ -4,7 +4,96 @@ All notable changes to DopingControl. Versions are the ones actually
 released here — a new feature raises the middle number and resets the last
 one, the last number is for fixes without new features.
 
-## Unreleased
+## v0.7.0
+
+### New Addons tab: who in the raid runs BigWigs, Threat Meter, EPGP, SuperWoW, Rinse
+
+A seventh tab checks the raid's addons without the other raiders needing
+DopingControl. Each column is detected only through what that addon sends or
+answers: BigWigs' version query, the TW Threatmeter "who" query, shootyepgp's
+version announcement and its SuperWoW reply, and UpsiRinse's version query.
+
+* **Version in every cell.** Green with a check mark = the newest version in
+  the raid (your own row counts); green with an exclamation mark = present but
+  older (the tooltip names the newest); red = no reply after the query
+  window. Versions compare numerically per segment, and only within the same
+  BigWigs fork.
+* **Honest silence.** Red only after a query window passed; before any query a
+  cell is grey "?". Not-in-guild (EPGP/SuperWoW) and non-dispeller classes
+  (Rinse) are "n/a", not red. The red tooltip says what it really means: not
+  installed, an old version, or a fork that does not answer.
+* **Check addons** button; opening the tab runs one automatic check, at most
+  every 30 seconds, never in combat and never on joining a raid. A passive
+  listener records versions that addons announce on their own, and forgets
+  raiders who left.
+* Your own row is read from your own addon list instead of waiting for replies.
+* `/dc test` shows a deterministic mix of states on this tab.
+* This adds a new file (`scan/addons.lua`), so the game must be restarted
+  once, not just reloaded.
+
+### Equipment tab names the enchant, not just "enchanted"
+
+Hovering an Equipment cell used to say only "Enchanted" or "Not
+enchanted". It now shows which permanent enchant the slot carries
+("Enchant: Crusader", "Enchant: Agility +15", ...). The names come from a
+table generated from the game client's own enchant data, so they match
+what the client shows, including server-custom enchants. An enchant that
+is not in the table shows as "enchant #<id>": it is still known to be
+enchanted, only the name is unknown, and it is never reported as missing.
+
+### The addon does the pre-raid test-mode check itself
+
+`/dc test` is persisted, so it survives a reload and a relog. A session
+that ended with the simulated raid on screen started the next one showing
+it again — and from then on the matrix graded a roster that does not
+exist. On screen the only marker was the source banner, so the failure
+mode was never an error, just a plausible wrong answer. That is the worst
+kind for a buff checker, and "remember to check before the raid" is not a
+routine anyone keeps.
+
+Now the addon says it, at the two moments it matters:
+
+* **Once per login or reload** — printed on world entry, not earlier;
+  chat output before that point is silently dropped.
+* **When a group forms** — on the 0 → grouped edge only, so a raid
+  filling up prints it once, not once per member.
+
+Both lines name the mode that is actually on and the switch that leaves
+it (`/dc test` or `/dc demo`) — naming the wrong one would send you to a
+toggle that changes nothing.
+
+### "readable" means one thing now — the footer and the tooltips caught up
+
+v0.6.1 gave the coverage pill its channel nouns (`15/26 hit read`), but the
+footer strip on the Hit and Resistances tabs still said **AVERAGE
+(READABLE)**, the chat report still said "average, readable players", and
+the empty-slot tooltips said "unit readable" — all naming the gear/hit/
+resist read while the word elsewhere (the `Not readable` list, the
+`N unreadable` chips, the `N/N readable` group chip) means "this player
+could be read at all". Same word, two populations, on one screen.
+
+Decided and pinned in a code comment (`core/model.lua`, `CoverageLabel`):
+**"readable" = the player could be read this scan (online, auras
+answered)** — and nothing else. Every channel-specific population is
+named by its channel: `gear read`, `hit read`, `resist read`.
+
+* Footer on Hit / Resistances: **AVERAGE (HIT READ)** / **AVERAGE (RESIST
+  READ)** — derived from the same function as the pill, so the two can
+  no longer drift apart.
+* Chat report section headers: `Hit (average, hit-read players):` /
+  `Resistances (average, resist-read players):`.
+* Empty-slot tooltips: `gear read, no trinket equipped …`, `gear read, no
+  item equipped …`; the generic "slot empty" line takes the tab's noun
+  (`readable` on the aura tabs, `gear read` on Equipment).
+* Coverage-pill tooltip on gear/hit/resist tabs now leads with the pill's
+  own number and noun (`15 of 26 hit read`), then the row-readability
+  line (`26 of 26 raid members readable (online, auras answered)`) —
+  before, the pill said `15/26` and its tooltip `26 of 26`.
+* Two more spots missed the first pass: the gear-unreadable row's status
+  chip and its row-spanning explanation (`ui/matrix.lua` `UnreadRowText`,
+  `core/model.lua` `row.unreadNote`) said `items not readable` — right
+  next to a group header that counts that same row as readable (only its
+  EQUIPMENT channel came back empty). Both now say `gear not read`.
 
 ## v0.6.4
 

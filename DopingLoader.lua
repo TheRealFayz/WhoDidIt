@@ -5,7 +5,7 @@
 	class buffs, debuffs, resistances, hit and enchant checker by ShempError
 	(MIT licence). It lives in the DopingControl\ folder and ships with
 	WhoDidIt, at the commit in DopingControl\wdi_version.lua (from
-	github.com/ShempError/DopingControl, its LICENSE kept). Its window opens
+	octowow.st/git/ShempError/DopingControl, its LICENSE kept). Its window opens
 	from the Consumes tab ("Open DopingControl") or with /dc.
 
 	tools\EmbedUpdate.ps1 (maintainer) makes small changes so it runs from inside WhoDidIt: its

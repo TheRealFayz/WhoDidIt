@@ -15,12 +15,10 @@ if WDI_DOPING_SKIP then return end -- DopingControl data/expectations.lua
 --     a CASTER/HEALER role default for every performing class.
 --
 -- Role-line choices:
---   Consumables: the four role sets of the KG stacking-rules atom
---                (data-tables/consumable-stacking-rules, TurtleWoW
---                1.17.2 -- melee / caster / tank / healer, each "all
---                active simultaneously") ARE the defaults now; see the
---                spec 2026-08-11-slot-model-item-icons-design.md. RANGED
---                has no KG set of its own and is derived from the melee
+--   Consumables: the four role sets of the reference stacking rules
+--                (TurtleWoW 1.17.2 -- melee / caster / tank / healer, each "all
+--                active simultaneously") ARE the defaults now. RANGED
+--                has no reference set of its own and is derived from the melee
 --                line (no STR -- ranged AP scales off AGI -- and no
 --                FLASK). FR stays situational for all five roles
 --                (enable/disable per boss via the expectation matrix),
@@ -56,15 +54,15 @@ if WDI_DOPING_SKIP then return end -- DopingControl data/expectations.lua
 -- Known debatable rows -- documented deliberately, the shipped defaults
 -- win:
 --   * TANK+AP / MELEE+FLASK: the OLD defaults deliberately excluded them;
---                   the KG role sets include them (tank runs Winterfall
+--                   the reference role sets include them (tank runs Winterfall
 --                   Firewater, melee runs Flask of the Titans), so both
 --                   flipped to true with the v6 slot model.
---   * RANGED line:  derived, not KG-covered (see above) -- BL is included
+--   * RANGED line:  derived, not covered by the reference sets (see above) -- BL is included
 --                   (Ground Scorpok Assay is +25 AGI), STR/FLASK are not.
---   * HEALER+HPELX: the KG healer set carries no Elixir of Fortitude, so
+--   * HEALER+HPELX: the reference healer set carries no Elixir of Fortitude, so
 --                   HPELX defaults off for HEALER while ALC (Kreeg's
 --                   Stout Beatdown + Medivh's Merlot Blue) is on.
---   * ZANZA:        expected for every role (all four KG sets carry it).
+--   * ZANZA:        expected for every role (all four reference sets carry it).
 --   * Equipment:    an alternative default would differentiate per role
 --                   (OFFH only TANK/MELEE, RNGD only RANGED,
 --                   casters/healers neither); deliberately flattened to
@@ -80,7 +78,7 @@ local DC = DopingControl
 
 DC.DEFAULT_EXPECT = {
     TANK = {
-        -- consumables (KG tank set: Mongoose, Firewater, Juju Power,
+        -- consumables (reference tank set: Mongoose, Firewater, Juju Power,
         -- R.O.I.D.S., Zanza, Superior Defense, Fortitude, Titans, food,
         -- Merlot + Rumsey, sharpening stone; Gift of Arthas has no column)
         FLASK = true, FOOD = true, AP = true, STR = true, AGI = true,
@@ -96,7 +94,7 @@ DC.DEFAULT_EXPECT = {
         WAIST = true,
     },
     MELEE = {
-        -- consumables (KG melee set: Mongoose, Firewater/Juju Might,
+        -- consumables (reference melee set: Mongoose, Firewater/Juju Might,
         -- Juju Power/Giants, R.O.I.D.S./Scorpok, Zanza, Titans, food,
         -- sharpening stone; Juju Flurry has no column)
         FLASK = true, FOOD = true, AP = true, STR = true, AGI = true,
@@ -110,7 +108,7 @@ DC.DEFAULT_EXPECT = {
         WAIST = true,
     },
     RANGED = {
-        -- consumables (derived from the melee line -- no KG set; no STR,
+        -- consumables (derived from the melee line -- no reference set; no STR,
         -- no FLASK, see "Known debatable rows")
         FOOD = true, AP = true, AGI = true, BL = true, ZANZA = true,
         FR = true, WPN = true,
@@ -125,7 +123,7 @@ DC.DEFAULT_EXPECT = {
     -- CASTER/HEALER: RNGD also dropped by role default (their classes are
     -- additionally exempt via ENCH_CLASS_EXEMPT - belt and suspenders)
     CASTER = {
-        -- consumables (KG caster set: Dreamshard, GAE, school elixir,
+        -- consumables (reference caster set: Dreamshard, GAE, school elixir,
         -- Dreamtonic, Mageblood, wizard oil, Zanza, Supreme Power, food)
         FLASK = true, FOOD = true, GAE = true, SCHOOL = true,
         DREAMT = true, SHARD = true, MP5 = true, ZANZA = true,
@@ -138,7 +136,7 @@ DC.DEFAULT_EXPECT = {
         WAIST = true,
     },
     HEALER = {
-        -- consumables (KG healer set: Dreamshard, Mageblood, mana oil,
+        -- consumables (reference healer set: Dreamshard, Mageblood, mana oil,
         -- Zanza, Distilled Wisdom, food, Kreeg's + Merlot Blue)
         FLASK = true, FOOD = true, MP5 = true, SHARD = true, ZANZA = true,
         ALC = true,

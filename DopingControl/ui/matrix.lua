@@ -105,6 +105,17 @@ if WDI_DOPING_SKIP then return end -- DopingControl ui/matrix.lua
 DopingControl = DopingControl or {}
 local DC = DopingControl
 
+-- True when the GameTooltip already has a line whose text is exactly `text`
+-- (e.g. the green enchant line SetHyperlink renders). nil/"" -> false.
+function DC.TipShowsLine(text)
+    if not text or text == "" or not GameTooltip or not GameTooltip.NumLines then return false end
+    for i = 1, GameTooltip:NumLines() do
+        local fs = getglobal("GameTooltipTextLeft" .. i)
+        if fs and fs:GetText() == text then return true end
+    end
+    return false
+end
+
 DC_Matrix = DC_Matrix or {}
 local MX = DC_Matrix
 
@@ -148,8 +159,8 @@ MX.ICON_CROP    = 0.08 -- TexCoord inset (0.08..0.92) -- crops the baked-in
 -- padding on the right -- one more tab therefore costs width per tab, not
 -- window width. Pinned by test_matrix_layout so adding a tab cannot
 -- silently push the last one under the frame border.
-MX.TAB_W        = 84
-MX.TAB_PITCH    = 88
+MX.TAB_W        = 74
+MX.TAB_PITCH    = 77
 
 -- Transient state (tab/filter are not persisted; collapse
 -- lives in db).
@@ -484,8 +495,7 @@ function MX.KnownSpellIds(name)
 end
 
 -- ------------------------------------------------------------------
--- Consumable HAS-cell visual: the item, not a check (spec
--- 2026-08-11-slot-model-item-icons-design.md, "Display"). The cell shows
+-- Consumable HAS-cell visual: the item, not a check. The cell shows
 -- the icon of the CONSUMABLE that produced the buff -- resolved through
 -- the phase-1 identification ladder (DC.ResolveItem: unique buff name ->
 -- entry; generic name -> tooltip effect-line discriminator) -- and falls
@@ -714,7 +724,7 @@ end
 -- judge the range hypothesis instead of being handed it as a verdict:
 -- distance is only one of the ways this read comes back empty.
 function MX.UnreadRowText(distance)
-    local s = "items not readable - no equipment slot returned an item link"
+    local s = "gear not read - no equipment slot returned an item link"
     if distance then
         s = s .. " (" .. MX.FarTag(distance) .. ")"
     end
@@ -846,17 +856,150 @@ function MX.IsDisplayTab(tab)
     if DC_Model and DC_Model.IsDisplayTab then
         return DC_Model.IsDisplayTab(tab)
     end
-    return tab == "RESIST" or tab == "HIT"
+    return tab == "RESIST" or tab == "HIT" or tab == "ADDONS"
+end
+
+-- The read-population noun for a tab -- "readable" on the aura-fed tabs
+-- (row readability, the ONE meaning of that word), "gear read" /
+-- "hit read" / "resist read" everywhere else. Thin wrapper over
+-- DC_Model.CoverageLabel with a matching fallback so the pill, the footer
+-- and the cell tooltips can never disagree on the noun.
+function MX.ReadNoun(tab)
+    if DC_Model and DC_Model.CoverageLabel then
+        return DC_Model.CoverageLabel(tab)
+    end
+    if tab == "HIT" then
+        return "hit read"
+    elseif tab == "RESIST" then
+        return "resist read"
+    elseif tab == "EQUIPMENT" then
+        return "gear read"
+    elseif tab == "ADDONS" then
+        return "answered"
+    end
+    return "readable"
 end
 
 -- Footer strip label per tab (footer counts stay the model's numbers).
+-- Display tabs name the population the average was taken over with the
+-- SAME channel noun as the coverage pill (MX.ReadNoun: "hit read" /
+-- "resist read") -- never "readable", which is reserved for row
+-- readability (see the CoverageLabel comment in core/model.lua).
 function MX.FooterLabel(tab)
     if tab == "DEBUFFS" then
         return "AFFLICTED PER DEBUFF"
+    elseif tab == "ADDONS" then
+        return "MISSING PER ADDON"
     elseif MX.IsDisplayTab(tab) then
-        return "AVERAGE (READABLE)"
+        return "AVERAGE (" .. string.upper(MX.ReadNoun(tab)) .. ")"
     end
     return "MISSING PER SLOT"
+end
+
+-- ------------------------------------------------------------------
+-- ADDONS tab, pure parts. The cell a reply produces:
+--   HAS     -> green tile, the version text, plus a mark: "check" (newest
+--              in the raid) or "bang" (present but older / not comparable)
+--   MISSING -> red tile with the cross (no reply after a query window, or
+--              known absent)
+--   UNKNOWN -> grey "?" (no query yet, offline)
+--   NOTEXP  -> quiet dot (n/a: not in guild / cannot dispel)
+-- Returns { kind = "version"|"cross"|"unknown"|"na", text, mark, color }.
+-- ------------------------------------------------------------------
+function MX.AddonCellStyle(state, a)
+    if state == "HAS" and type(a) == "table" then
+        return { kind = "version", text = a.text or "?",
+                 mark = (a.mark == "bang") and "bang" or "check",
+                 color = "hat" }
+    elseif state == "MISSING" then
+        return { kind = "cross", color = "fehlt" }
+    elseif state == "NOTEXP" then
+        return { kind = "na", color = "skipGlyph" }
+    end
+    return { kind = "unknown", color = "unbek" }
+end
+
+-- Status line next to the Check addons button (pure; A = DC_Addons).
+function MX.AddonStatusText(A, now)
+    if not A or not A.query then
+        return ""
+    end
+    local q = A.query
+    if A.lastStatus then
+        return A.lastStatus
+    end
+    if not q.at then
+        return "not asked yet"
+    end
+    local left = (q.at + (A.WINDOW or 6)) - now
+    if left > 0 then
+        return "waiting for replies... " .. math.ceil(left) .. "s"
+    end
+    return "asked " .. math.floor(now - q.at) .. "s ago"
+end
+
+-- Tooltip text for an ADDONS cell: array of { text, color key, wrap }.
+function MX.AddonTooltipLines(sd, cvm, now)
+    local lines = {}
+    local a = cvm and cvm.addon
+    if type(a) ~= "table" then
+        a = type(cvm and cvm.detail) == "table" and cvm.detail or {}
+    end
+    table.insert(lines, { sd.full, "white" })
+    local st = a.status
+    if st == "ok" then
+        local t = a.text or "?"
+        if a.presenceOnly then
+            t = t .. " (installed, version not reported)"
+        end
+        table.insert(lines, { t, "hat" })
+        if a.newest then
+            table.insert(lines, { "newest in raid", "parchDim", 1 })
+        end
+    elseif st == "old" then
+        table.insert(lines, { a.text or "?", "hat" })
+        table.insert(lines, { a.note or "older than the newest in the raid",
+            "parch", 1 })
+    elseif st == "missing" then
+        table.insert(lines, { (a.text == "no") and "SuperWoW: no" or "No reply",
+            "fehlt" })
+        table.insert(lines, { a.why or "no reply - addon missing, or an old"
+            .. " version / fork that does not answer", "parchDim", 1 })
+    elseif st == "na" then
+        table.insert(lines, { "n/a", "parchDim" })
+        table.insert(lines, { a.why or "not applicable", "parchDim", 1 })
+    else
+        table.insert(lines, { "unknown", "unbek" })
+        table.insert(lines, { a.why or "not asked yet - use Check addons",
+            "parchDim", 1 })
+    end
+    if a.variant and a.variant ~= "" and (st == "ok" or st == "old") then
+        table.insert(lines, { "fork: " .. a.variant, "parchDim" })
+    end
+    if a.islocal then
+        table.insert(lines, { "read from your own addon list", "parchDim" })
+    elseif a.raw then
+        local raw = string.gsub(a.raw, "|", "")
+        if string.len(raw) > 60 then
+            raw = string.sub(raw, 1, 60) .. "..."
+        end
+        table.insert(lines, { "raw reply: " .. raw, "parchDim", 1 })
+    end
+    if a.at and now then
+        local sec = now - a.at
+        local txt
+        if sec < 0 then
+            txt = "just now"
+        elseif sec < 60 then
+            txt = math.floor(sec) .. "s ago"
+        elseif sec < 3600 then
+            txt = math.floor(sec / 60) .. "m ago"
+        else
+            txt = math.floor(sec / 3600) .. "h ago"
+        end
+        table.insert(lines, { "seen " .. txt, "parchDim" })
+    end
+    return lines
 end
 
 -- Sum-column text for a DEBUFFS row: quiet "0" when clean, red "N" when
@@ -1287,6 +1430,10 @@ function MX.SetTab(id)
         return
     end
     MX.state.tab = id
+    if id == "ADDONS" and DC_Addons and DC_Addons.Check then
+        -- opening the tab runs one throttled check (<= once per 30 s)
+        DC_Addons.Check(true)
+    end
     if MX.Refresh then
         MX.Refresh()
     end
@@ -1384,8 +1531,9 @@ function M.CellTooltip(cell)
     local state = cvm.state
     -- Equipment cell with a known item: native
     -- item tooltip via SetHyperlink -- it includes the green enchant line,
-    -- which is the ONLY way to show WHAT the item is enchanted with (no
-    -- enchant-name table exists in 1.12). Re-SetOwner with ANCHOR_LEFT
+    -- which usually names the enchant, but not reliably for server-custom
+    -- ones -- so our own line below adds the name from DC.ENCH_NAMES.
+    -- Re-SetOwner with ANCHOR_LEFT
     -- (clears the AttachTooltip cursor anchor) + one colored state line.
     -- Uncached items may render an empty tooltip on the first hover (the
     -- client fires the server query); acceptable, fills once cached.
@@ -1397,7 +1545,16 @@ function M.CellTooltip(cell)
         GameTooltip:SetHyperlink("item:" .. item.id .. ":" .. (item.enchant or 0))
         if sd.kind == "ench" then
             if state == S.HAS then
-                GameTooltip:AddLine("Enchanted", C.hat.r, C.hat.g, C.hat.b)
+                -- WHICH enchant, exactly once: the native item tooltip already
+                -- carries the green enchant line when the item is cached and the
+                -- client knows the enchant; only otherwise name it ourselves
+                -- (client-DBC table, or "enchant #<id>" when the id is not in it)
+                if DC.TipShowsLine(DC.EnchantName(item.enchant)) then
+                    GameTooltip:AddLine("Enchanted", C.hat.r, C.hat.g, C.hat.b)
+                else
+                    GameTooltip:AddLine("Enchant: " .. (DC.EnchantLabel(item.enchant) or "?"),
+                        C.hat.r, C.hat.g, C.hat.b)
+                end
             elseif state == S.MISSING then
                 GameTooltip:AddLine("Not enchanted",
                     C.fehlt.r, C.fehlt.g, C.fehlt.b)
@@ -1415,11 +1572,26 @@ function M.CellTooltip(cell)
                     GameTooltip:AddLine("Enchant not expected for this role/class",
                         C.parch.r, C.parch.g, C.parch.b)
                 end
+                if DC.EnchantLabel(item.enchant)
+                    and not DC.TipShowsLine(DC.EnchantName(item.enchant)) then
+                    GameTooltip:AddLine("Enchant: " .. DC.EnchantLabel(item.enchant),
+                        C.hat.r, C.hat.g, C.hat.b)
+                end
             end
         elseif state == S.HAS then
             GameTooltip:AddLine("Equipped", C.hat.r, C.hat.g, C.hat.b)
         end
         GameTooltip:Show()
+        return
+    end
+    -- Addons tab: version, newest-in-raid note, raw reply, age
+    if sd.kind == "addon" then
+        local al = MX.AddonTooltipLines(sd, cvm, GetTime())
+        for i = 1, table.getn(al) do
+            local l = al[i]
+            local col = (l[2] == "white") and W.WHITE or C[l[2]]
+            W.TipLine(l[1], col or C.parch, l[3])
+        end
         return
     end
     -- Debuffs tab: afflicted = MISSING
@@ -1534,9 +1706,14 @@ function M.CellTooltip(cell)
             W.TipLine("Slot " .. sd.full, C.parch, 1)
         end
     elseif state == S.MISSING then
+        -- The lead-in names the read the gap claim rests on: equipment
+        -- slots are a "gear read" claim, aura slots a "readable" (row
+        -- readability) claim -- the same noun the pill shows on that tab
+        -- (DC_Model.CoverageLabel), so "readable" keeps its one meaning.
+        local readNoun = MX.ReadNoun(MX.state.tab)
         if sd.kind == "trinket" then
             W.TipLine(sd.full .. " empty", C.fehlt)
-            W.TipLine("unit readable, no trinket equipped - counts as a gap",
+            W.TipLine("gear read, no trinket equipped - counts as a gap",
                 C.parchDim, 1)
         elseif sd.kind == "ench" and cvm.detail ~= "no enchant" then
             -- empty gear slot (no item at all, cvm.detail == "<full>
@@ -1544,11 +1721,11 @@ function M.CellTooltip(cell)
             -- expectation checkbox -- distinct wording from the real
             -- "item present, no enchant" case right below
             W.TipLine(tostring(cvm.detail or (sd.full .. " empty")), C.fehlt)
-            W.TipLine("unit readable, no item equipped - counts as a gap"
+            W.TipLine("gear read, no item equipped - counts as a gap"
                 .. " regardless of expectations", C.parchDim, 1)
         else
             W.TipLine("Missing: " .. sd.full, C.fehlt)
-            W.TipLine("unit readable, slot empty - expected for "
+            W.TipLine(readNoun .. ", slot empty - expected for "
                 .. M.roleName(row.role), C.parchDim, 1)
         end
     elseif state == S.UNKNOWN then
@@ -1601,6 +1778,14 @@ function M.HeaderTooltip(tile)
         return
     end
     W.TipLine(sd.full, W.WHITE)
+    if sd.kind == "addon" then
+        W.TipLine(sd.how, C.parch, 1)
+        W.TipLine(sd.limits, C.parchDim, 1)
+        W.TipLine("No reply after the query window is shown as missing"
+            .. " (red); before any query the cell stays unknown.",
+            C.parchDim, 1)
+        return
+    end
     if sd.kind == "debuff" or sd.kind == "resist" then
         -- debuff/resist header tooltip is
         -- the full name only; no items line, no expected-for line
@@ -1758,8 +1943,22 @@ function M.CoverageTooltip()
     if not cov then
         return
     end
-    W.TipLine(cov.readable .. " of " .. cov.total .. " raid members readable",
-        W.WHITE)
+    -- Lead with the number the pill shows, under the pill's own noun.
+    -- On gear/hit/resist tabs that is the channel count ("15 of 26 hit
+    -- read"); the row-readability line ("readable") then follows as the
+    -- population those channels were read within. On aura-fed tabs the
+    -- two are the same number, so only the "readable" line is shown.
+    local tab = MX.vm and MX.vm.tab
+    local noun = MX.ReadNoun(tab)
+    if noun ~= "readable" and cov.channelReadable then
+        W.TipLine(cov.channelReadable .. " of " .. cov.total .. " "
+            .. noun, W.WHITE)
+        W.TipLine(cov.readable .. " of " .. cov.total
+            .. " raid members readable (online, auras answered)", C.parch)
+    else
+        W.TipLine(cov.readable .. " of " .. cov.total
+            .. " raid members readable", W.WHITE)
+    end
     W.TipLine(cov.offline .. " offline \194\183 " .. cov.readfailed
         .. " read failed", C.parch)
     if cov.far and cov.far > 0 then
@@ -2370,6 +2569,66 @@ function M.PaintLastCell(cell, sd, last)
     end
 end
 
+-- Addons tab cell: green tile, version text in the upper half, a mark in
+-- the lower half (check = newest in the raid, "!" = present but older or
+-- not comparable). Marks are created lazily and named.
+function M.EnsureAddonMark(cell)
+    if cell.markTex then
+        return
+    end
+    UI.cellMarkN = (UI.cellMarkN or 0) + 1
+    local t = cell:CreateTexture("DopingControlCell" .. UI.cellMarkN
+        .. "MarkCheck", "OVERLAY")
+    t:SetPoint("BOTTOM", cell, "BOTTOM", 0, 1)
+    t:SetWidth(9)
+    t:SetHeight(9)
+    t:SetTexture(W.CHECK_TEX)
+    t:Hide()
+    cell.markTex = t
+    local fs = cell:CreateFontString("DopingControlCell" .. UI.cellMarkN
+        .. "MarkBang", "OVERLAY")
+    fs:SetFontObject(GameFontNormalSmall)
+    fs:SetPoint("BOTTOM", cell, "BOTTOM", 0, 1)
+    fs:SetText("!")
+    fs:Hide()
+    cell.markFS = fs
+end
+
+function M.ResetAddonLook(cell)
+    if cell.markTex then
+        cell.markTex:Hide()
+        cell.markFS:Hide()
+    end
+    if cell.dcTextShifted then
+        cell.dcTextShifted = nil
+        cell.text:ClearAllPoints()
+        cell.text:SetPoint("CENTER", cell, "CENTER", 0, 0)
+    end
+end
+
+function M.PaintAddonCell(cell, cvm)
+    local st = MX.AddonCellStyle("HAS", cvm.addon)
+    W.SetCellBox(cell, "HAS")
+    cell.icon:Hide()
+    M.HideIconTex(cell)
+    M.HideCornerTex(cell)
+    cell.dcTextShifted = true
+    cell.text:ClearAllPoints()
+    cell.text:SetPoint("CENTER", cell, "CENTER", 0, 4)
+    W.SetTextG(cell.text, st.text)
+    W.SetTextColorG(cell.text, C[st.color])
+    W.SetAlphaG(cell.text, 1)
+    cell.text:Show()
+    M.EnsureAddonMark(cell)
+    if st.mark == "bang" then
+        cell.markFS:SetTextColor(C.hat.r, C.hat.g, C.hat.b)
+        cell.markFS:Show()
+    else
+        W.SetVertexG(cell.markTex, C.hat)
+        cell.markTex:Show()
+    end
+end
+
 function M.PaintCell(cell, sd, cvm, row)
     -- The cell's icon and FontString are created on demand (see W.MakeCell);
     -- this path touches both, so materialize both before anything reads them.
@@ -2445,11 +2704,18 @@ function M.PaintCell(cell, sd, cvm, row)
         -- into the style key
         key = "HIT:" .. tostring(cvm.value or 0) .. ":"
             .. tostring(cvm.capMet)
+    elseif state == S.HAS and sd.kind == "addon" then
+        -- addon version text and its check/bang mark drive the look
+        key = "ADDON:" .. tostring(cvm.value) .. ":"
+            .. tostring(cvm.addon and cvm.addon.mark)
     end
     if cell.dcStyle == key then
         return
     end
     cell.dcStyle = key
+    -- the addon cell shifts its text up to make room for the mark; every
+    -- other look starts from the centred text and no mark
+    M.ResetAddonLook(cell)
 
     if last then
         M.PaintLastCell(cell, sd, last)
@@ -2530,6 +2796,8 @@ function M.PaintCell(cell, sd, cvm, row)
         end
         W.SetAlphaG(cell.text, 1)
         cell.text:Show()
+    elseif state == S.HAS and sd.kind == "addon" then
+        M.PaintAddonCell(cell, cvm)
     elseif state == S.HAS and sd.kind == "hit" then
         -- hit: the percentage IS the content. At or above the cap the
         -- whole tile turns green (background + border, the fulfilled
@@ -2682,7 +2950,7 @@ function M.PaintRow(rf, row, layout, slots, now)
         rf.bg:Show()
     end
     -- status: subgroup + unreadable reason. In "dimmed" mode the
-    -- chip carries rowVM.unreadNote ("out of range") -- the spanning
+    -- chip carries rowVM.unreadNote ("gear not read") -- the spanning
     -- message is replaced by dimmed tiles, so the reason moves up here;
     -- in "message" mode the spanning line has it.
     local st = ""
@@ -2693,7 +2961,7 @@ function M.PaintRow(rf, row, layout, slots, now)
     if not row.readable then
         note = row.unreadableReason or "not readable"
     elseif mode == "dimmed" then
-        note = row.unreadNote or "out of range"
+        note = row.unreadNote or "gear not read"
     end
     if note then
         if st ~= "" then
@@ -2960,9 +3228,37 @@ function M.BuildToolbar(f)
         fx = fx + defs[i].w + 2
     end
     local hintFS = W.MakeText(f, 8, C.faint)
+    UI.hintFS = hintFS
     hintFS:SetPoint("TOPLEFT", f, "TOPLEFT", fx + 12, tbY - 6)
     hintFS:SetText("Grouped by role \194\183 gaps first \194\183 click a group"
         .. " header to collapse")
+
+    -- Addons tab only: the Check addons button + a status line, shown in
+    -- place of the hint text
+    local ab = W.MakeButton(f, "DopingControlCheckAddonsButton",
+        "Check addons", 90, 17)
+    ab:SetPoint("TOPLEFT", f, "TOPLEFT", fx + 12, tbY - 1)
+    ab:SetScript("OnClick", function()
+        if DC_Addons and DC_Addons.Check then
+            DC_Addons.Check(false)
+        end
+        MX.Refresh()
+    end)
+    W.AttachTooltip(ab, function()
+        W.TipLine("Check addons", W.WHITE)
+        W.TipLine("Asks the group which addons the raiders run: one burst of"
+            .. " addon messages, replies are collected for "
+            .. (DC_Addons and DC_Addons.WINDOW or 6) .. " s. Not in combat.",
+            C.parchDim, 1)
+        W.TipLine("Opening this tab runs it once automatically (at most every "
+            .. (DC_Addons and DC_Addons.AUTO_THROTTLE or 30) .. " s).",
+            C.parchDim, 1)
+    end, "ANCHOR_LEFT")
+    ab:Hide()
+    UI.addonBtn = ab
+    UI.addonStatusFS = W.MakeText(f, 8, C.faint)
+    UI.addonStatusFS:SetPoint("LEFT", ab, "RIGHT", 8, 0)
+    UI.addonStatusFS:Hide()
 
     -- legend (right side), built right-to-left so it follows frame width
     local legend = { { "not expected", C.skip, C.skipBorder },
@@ -3157,6 +3453,20 @@ function M.RenderChrome(vm, layout, frameW, hiddenCount)
         W.SetBackdropG(b, active and C.btnGreenBg or C.panel2,
             active and C.btnGreenBorder or C.line)
     end
+    -- Addons tab: button + status instead of the hint text
+    if UI.addonBtn then
+        if vm.tab == "ADDONS" then
+            UI.addonBtn:Show()
+            UI.addonStatusFS:Show()
+            UI.hintFS:Hide()
+            W.SetTextG(UI.addonStatusFS, MX.AddonStatusText(DC_Addons,
+                GetTime()))
+        else
+            UI.addonBtn:Hide()
+            UI.addonStatusFS:Hide()
+            UI.hintFS:Show()
+        end
+    end
     if hiddenCount > 0 then
         W.SetTextG(UI.hiddenFS, hiddenCount .. " slots hidden")
     else
@@ -3233,9 +3543,9 @@ function M.RenderHeader(layout, slots, yTop, frameW)
         end
         tile.dcSD = sd
         if sd.kind == "debuff" or sd.kind == "resist"
-           or sd.kind == "hit" then
+           or sd.kind == "hit" or sd.kind == "addon" then
             -- expectations are not consulted on DEBUFFS/RESIST (hit
-            -- columns included)
+            -- and addon columns included)
             tile.dcExpFor = nil
         else
             tile.dcExpFor = MX.ExpectedForString(sd.id, expectTbl)
@@ -3587,7 +3897,7 @@ function M.RenderFooter(vm, layout, slots, footerY, frameW)
             fs:ClearAllPoints()
             fs:SetPoint("CENTER", fr, "LEFT", cx, 0)
         end
-        if MX.IsDisplayTab(MX.state.tab) then
+        if MX.IsDisplayTab(MX.state.tab) and MX.state.tab ~= "ADDONS" then
             -- average, not a count -- parch, never red (display only).
             -- Hit columns average with one decimal, like their cells.
             local avgTbl = vm.colAvg or vm.resistAvg
@@ -3697,6 +4007,19 @@ function MX.Refresh()
     -- demo mode substitutes its own transient expectation layer here --
     -- the SAME resolver M.RenderHeader uses, so header and cells agree
     local expectTbl = MX.ExpectTable(d)
+    if MX.state.tab == "ADDONS" and DC_Addons and DC_Addons.AnnotateStore then
+        -- evaluate the addon replies onto the players before the model
+        -- reads them (own row from local knowledge, silence only after a
+        -- query window)
+        local okE, env = false, nil
+        if DC_Addons.GameEnv then
+            okE, env = pcall(DC_Addons.GameEnv)
+        end
+        if not okE then
+            env = { now = GetTime() }
+        end
+        DC_Addons.AnnotateStore(st, env)
+    end
     -- pass GetTime() as the model's `now` (optional 5th
     -- build param) so UNKNOWN cells with cached data get
     -- cell.last.age, and db.skillBooks as the 6th so the hit columns
@@ -3709,9 +4032,19 @@ function MX.Refresh()
     M.Render()
 end
 
+-- called by scan/addons.lua when replies came in / the query window ended
+function MX.RefreshAddons()
+    if MX.state.tab == "ADDONS" and MX.Refresh then
+        MX.Refresh()
+    end
+end
+
 function MX.Show()
     M.BuildFrame()
     UI.main:Show()
+    if MX.state.tab == "ADDONS" and DC_Addons and DC_Addons.Check then
+        DC_Addons.Check(true)
+    end
     MX.Refresh()
     local db = DopingControlDB
     local st = DC.store

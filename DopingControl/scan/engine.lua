@@ -9,7 +9,16 @@ if WDI_DOPING_SKIP then return end -- DopingControl scan/engine.lua
 --   * READY_CHECK: registered DEFENSIVELY via pcall (unverified as a
 --     native client event on 1.12; if the
 --     registration throws, the feature silently does not exist). Honors
---     db.readyCheckScan and never fires in test mode (sim store).
+--     db.readyCheckScan and never fires in test mode (sim store). Tagged
+--     E.Start(nil, "readyCheck").
+--   * pull timer (scan/pull.lua): a BigWigs pull-timer start from ANY
+--     raid/party member (including a defensive SendAddonMessage hook for
+--     one's own /pull -- see that file's header) calls E.Start(nil, "pull")
+--     -- same entry point, so it is silent by the same construction as
+--     everything else here (E.Start never shows any frame; the ready-check
+--     path's auto-OPEN is a separate decision in core/init.lua). Honors
+--     db.pullTimerScan, DC.SimOwnsStore and group membership, and is
+--     debounced to at most one trigger per 15s (DC_Pull.DEBOUNCE).
 --   * roster change (RAID_ROSTER_UPDATE / PARTY_MEMBERS_CHANGED): raid
 --     indices are VOLATILE after these events,
 --     so a running scan is restarted with a fresh roster snapshot; a
@@ -462,11 +471,18 @@ function E.AssembleResists(isSelf, tokenRows, guidRows, fieldRows, gearFallback)
     return nil, false, nil
 end
 
--- NewStore(players, scanAt) -> store (source = "scan")
-function E.NewStore(players, scanAt)
+-- NewStore(players, scanAt, trigger) -> store (source = "scan")
+--   trigger : nil|"readyCheck"|"pull"|... -- purely INFORMATIONAL metadata
+--             naming what caused this particular scan (dev/raiddump.lua's S
+--             line and nothing else reads it). store.source stays "scan"
+--             regardless -- it remains the ONE field every sim/real gate
+--             tests (DC_Roles.resolve, ui/matrix.lua's banner, the
+--             storeInvalid check below); trigger never substitutes for it.
+function E.NewStore(players, scanAt, trigger)
     return {
         scanAt = scanAt,
         source = "scan",
+        trigger = trigger,
         players = players or {},
     }
 end
@@ -602,6 +618,7 @@ if CreateFrame then
     local results = {}        -- store player entries, roster order
     local running = false
     local restartPending = false
+    local currentTrigger = nil  -- see E.Start's `trigger` param / E.NewStore
 
     -- BuildRoster() -> array of { unit, name, class, online, guid,
     -- subgroup }. online is true|false for raid entries (roster flag,
@@ -1039,7 +1056,7 @@ if CreateFrame then
             end
             DC_Talents.Request(names)
         end
-        DC.store = E.NewStore(results, now)
+        DC.store = E.NewStore(results, now, currentTrigger)
         DC.storeInvalid = nil
         results = {}
         if type(DC.OnStoreUpdated) == "function" then
@@ -1064,23 +1081,31 @@ if CreateFrame then
         end
     end
 
-    -- Start(force) -> bool (scan started/restarted).
+    -- Start(force, trigger) -> bool (scan started/restarted).
     -- Already running: no-op unless force, which restarts with a fresh
     -- roster snapshot. DC.SimOwnsStore is NOT checked here -- an explicit
     -- Start is user intent, and the callers that are NOT user intent
-    -- (READY_CHECK, the roster-change and window-open auto-scans) check it
-    -- themselves. The scan may therefore run in test/demo mode; what it may
-    -- never do is publish, so finish() drops the result instead.
-    function E.Start(force)
+    -- (READY_CHECK, the pull-timer, roster-change and window-open
+    -- auto-scans) check it themselves. The scan may therefore run in
+    -- test/demo mode; what it may never do is publish, so finish() drops
+    -- the result instead.
+    -- `trigger` is purely informational (see E.NewStore) and is captured
+    -- fresh on every call, restarts included: a force-restart is already
+    -- documented as "a fresh roster snapshot", so it gets a fresh trigger
+    -- label too, defaulting to nil (unlabeled) exactly like every caller
+    -- that does not pass one today.
+    function E.Start(force, trigger)
         if running then
             if not force then
                 return false
             end
             restartPending = true
+            currentTrigger = trigger
             return true
         end
         running = true
         restartPending = false
+        currentTrigger = trigger
         beginQueue()
         scanFrame:Show()  -- hidden frames get no OnUpdate on 1.12
         scanFrame:SetScript("OnUpdate", tick)
@@ -1102,7 +1127,7 @@ if CreateFrame then
         if event == "READY_CHECK" then
             local db = DopingControlDB
             if db and db.readyCheckScan and not DC.SimOwnsStore(db) then
-                E.Start()
+                E.Start(nil, "readyCheck")
             end
             return
         end

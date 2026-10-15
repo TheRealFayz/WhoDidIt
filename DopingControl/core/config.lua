@@ -32,6 +32,10 @@ DC.DEFAULTS = {
     minimapAngle      = 215,    -- degrees around the minimap rim
     readyCheckScan    = true,   -- auto-scan on READY_CHECK
     readyCheckOpen    = true,   -- auto-open window on READY_CHECK
+    -- auto-scan on a BigWigs pull timer (scan/pull.lua), ANY raid/party
+    -- member's, never opens the window -- see that file's header for the
+    -- wire format and the self-pull backstop.
+    pullTimerScan     = true,
     collapse          = {},     -- per-role collapsed flags, e.g. collapse.RANGED = true
     filterGapsOnly    = false,  -- toolbar filter All | Gaps only
     roles             = {},     -- confirmed roles keyed by player NAME

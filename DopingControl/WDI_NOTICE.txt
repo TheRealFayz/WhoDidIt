@@ -2,7 +2,8 @@ DopingControl, built into WhoDidIt
 ==================================
 
 This folder is DopingControl, the raid consumables / buffs / enchants checker by
-ShempError: https://github.com/ShempError/DopingControl
+ShempError: https://octowow.st/git/ShempError/DopingControl
+(up to 0.6.4: https://github.com/ShempError/DopingControl)
 
 All credit for it goes to its author. It is MIT licensed (see LICENSE in this
 folder, which applies to it). WhoDidIt ships it at the commit named in
