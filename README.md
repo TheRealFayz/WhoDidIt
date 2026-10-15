@@ -277,6 +277,8 @@ its loading screen, laid out like the raids.
 
 - **A run** is timed from the group's first pull after zoning in to the death of the dungeon's last boss. Every boss on
   the way is a split, and deaths are counted. Groups of up to 5 players (Upper Blackrock Spire: 10).
+- **Dying and running back** doesn't restart the timer, even when the game shows the wrong zone name for a while
+  after the loading screen. If a pull ever starts a new run while one hadn't finished, chat says so.
 - **Name your group:** when a group finishes, its leader (or, if the leader hasn't got WhoDidIt, whoever has) is asked
   once for a name, remembered for the same players. **Name my group** (bottom left) or **rename it** on one of the
   group's runs changes it.

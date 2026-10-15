@@ -27,6 +27,10 @@ World of Warcraft client 1.12.1 (TurtleWoW / OctoWoW), Lua 5.0, with SuperWoW an
   BigWigs, AutoMarker). Chronicle calls them "Lower Tower of Karazhan" (Lower Karazhan Halls,
   10 players) and "Upper Tower of Karazhan" (40). Data.lua D.sharedZones / Board.lua B.RunZone tell
   them apart by GetRaidRosterInfo's 7th return (zone); that value isn't checked in game yet.
+- GetRealZoneText() can lag behind a loading screen: inside LBRS it said "Blackrock Mountain" (subzone "Blackrock
+  Spire") for a while after a ghost run-back (Shemp, 14 Oct 2026), and v1.26.0 lost the run's first 67 minutes.
+  Never decide on one reading after PLAYER_ENTERING_WORLD: Dungeons.lua arms a run without the zone and re-reads it
+  every second (settle: a run started on a lagging name is renamed, a replaced unfinished run waits in r.prev).
 
 ## Before every commit
 - Every .lua file must load under a real Lua 5.0 interpreter (syntax check). There is no

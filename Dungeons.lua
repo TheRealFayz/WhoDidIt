@@ -342,10 +342,11 @@ local function setCur(r)
 	WhoDidItDB.run5[charKey()] = r
 end
 
--- in a dungeon (any instance that isn't one of the timed raids or Karazhan's towers)
+-- in a dungeon (any instance that isn't one of the timed raids, Karazhan's towers or
+-- a battleground: Spy checks "pvp" the same way on this client)
 local function dungeonZone()
-	local inInst = IsInInstance()
-	if not inInst then return nil end
+	local inInst, typ = IsInInstance()
+	if not inInst or typ == "pvp" or typ == "arena" then return nil end
 	local zone = GetRealZoneText()
 	if not zone or zone == "" or W.Data.clears[zone] or W.Data.sharedZones[zone] then return nil end
 	return zone
@@ -357,36 +358,81 @@ function R:Current()
 	if r and r.at then return r end
 end
 
-local armed   -- the zone a fresh run starts in at the next pull
+local function say(text) W.Print("|cff33ccff5-man:|r " .. text) end
 
--- zoning in: a new run unless we're carrying on the same one (died and ran
--- back, a /reload). After a final boss, the next zone-in is a new run (Dire
--- Maul's wings, a reset instance).
--- (nothing is thrown away here, only at the next pull: the zone text can lag
--- behind on a loading screen, and the next zone event puts it right)
-local function zoned()
-	if not WhoDidItDB then return end
-	local zone = dungeonZone()
+-- A loading screen arms a new run: the next pull inside starts it, unless it's
+-- the same dungeon as an unfinished run (died and ran back, a /reload). After a
+-- final boss, the next zone-in is a new run (Dire Maul's wings, a reset instance).
+-- The zone text can lag behind a loading screen (Shemp's LBRS run, 14 Oct 2026:
+-- "Blackrock Mountain" for a while after running back in as a ghost), so arming
+-- doesn't look at it, it's read again every second, and one reading never throws
+-- a run away:
+--  - the zone can't change without a loading screen, so once a run is known to be
+--    the one we're in (it started here, or its zone showed since the last loading
+--    screen), it takes any other name the zone shows
+--  - a run started while another hadn't finished keeps that one (prev) until the
+--    next loading screen: if the zone turns out to be its zone after all, the old
+--    run carries on, with the bosses and deaths since
+local armed   -- a loading screen since the last run started
+local here    -- the run we're in, known since the last loading screen
+
+local function settle()
 	local r = cur()
-	if not zone or (r and r.zone == zone and not r.fin) then armed = nil return end
-	armed = zone
+	local zone = dungeonZone()
+	if not r or not zone then return end
+	local p = r.prev
+	if p and not r.fin and zone == p.zone and zone ~= r.zone then
+		for name, at in pairs(r.k) do
+			if not p.k[name] then p.k[name] = r.at + at - p.at end
+		end
+		p.x = (p.x or 0) + (r.x or 0)
+		setCur(p)
+		armed, here = nil, p
+		say("the zone name was lagging behind the loading screen - your " .. zone .. " run carries on ("
+			.. R.Fmt(time() - p.at) .. " since its first pull).")
+		return
+	end
+	if r.fin then return end
+	if zone == r.zone then
+		armed, here = nil, r   -- carrying on: the next pull isn't a new run
+	elseif r == here then
+		r.zone = zone
+	end
 end
-W:On("PLAYER_ENTERING_WORLD", zoned)
-W:On("ZONE_CHANGED_NEW_AREA", zoned)
+
+W:On("PLAYER_ENTERING_WORLD", function()
+	if not WhoDidItDB then return end
+	local r = cur()
+	if r then r.prev = nil end
+	armed, here = true, nil
+	settle()
+end)
+W:On("ZONE_CHANGED_NEW_AREA", function() if WhoDidItDB then settle() end end)
+W:Every(1, function() if WhoDidItDB then settle() end end)
 
 W:On("PLAYER_REGEN_DISABLED", function()
 	if not WhoDidItDB then return end
+	settle()
 	local zone = dungeonZone()
 	local r = cur()
-	if not zone or (r and r.zone == zone and not r.fin) or zone ~= armed then return end
+	if not zone or (r and r.zone == zone and not r.fin) or not armed then return end
 	armed = nil
-	setCur({ zone = zone, at = time(), k = {}, x = 0 })
+	local new = { zone = zone, at = time(), k = {}, x = 0 }
+	if r and not r.fin then
+		r.prev = nil
+		new.prev = r
+		say("the run timer started again: a new run in " .. zone .. " (your " .. r.zone .. " run hadn't finished, "
+			.. R.Fmt(time() - r.at) .. " in).")
+	end
+	here = new
+	setCur(new)
 end)
 
 local complete   -- (below)
 
 local function bossDied(name)
-	if not name or not D().DUNGEON_BOSS[name] then return end
+	if not name or not WhoDidItDB or not D().DUNGEON_BOSS[name] then return end
+	settle()
 	local r = R:Current()
 	if not r or r.zone ~= dungeonZone() then return end
 	if r.k[name] then
@@ -415,6 +461,7 @@ end)
 
 W:On("CHAT_MSG_COMBAT_FRIENDLY_DEATH", function(msg)
 	if not msg or not WhoDidItDB then return end
+	settle()
 	local r = R:Current()
 	if not r or r.zone ~= dungeonZone() then return end
 	local _, _, name = string.find(msg, "^(.+) dies%.$")
@@ -426,8 +473,6 @@ end)
 
 local pend           -- the run being agreed on: { key, gk, m, n, s, x, secs, votes, t0, ... }
 local early = {}     -- votes heard before our own final-boss message: sender -> { key, ..., at }
-
-local function say(text) W.Print("|cff33ccff5-man:|r " .. text) end
 
 complete = function(key, r, boss)
 	local dg = D().DUNGEON[key]
