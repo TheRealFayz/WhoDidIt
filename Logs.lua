@@ -388,9 +388,12 @@ W:Every(1, function() if WhoDidItDB and hooked then settleFile() end end)
 
 ------------------------------------------------------------------ hooks from the tracker
 
--- a boss was pulled
+-- a boss was pulled (only in a raid or a 5-man: training dummies count as world bosses, and
+-- one in a city started logging the open world, 16 Oct 2026)
 function L:OnFightStart()
 	if L.cur and L.cur.skip and L.target == L.cur.file then return end   -- "Don't log this raid"
+	local inInst, typ = IsInInstance()
+	if not inInst or (typ ~= "raid" and typ ~= "party") then return end
 	if WhoDidItDB.opts.chronStartOnPull and L:Available() and L:Allowed() and not ChronicleLog:IsEnabled() then
 		ChronicleLog:Enable()
 		W.Print("Chronicle logging |cff33ff33started|r for the pull.")
